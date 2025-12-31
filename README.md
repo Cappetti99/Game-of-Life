@@ -1,6 +1,50 @@
 # Game of Life
 
-Conway's Game of Life implementation with sequential (Python) and parallel (CUDA) versions for performance comparison.
+Conway's Game of Life implementation with three versions:
+- **Sequential** (Python/NumPy) - For learning and prototyping
+- **Parallel** (CUDA) - High-performance GPU computation
+- **Visual** (Pygame) - Interactive real-time visualization
+
+## Project Structure
+
+```
+Game-of-Life/
+├── src/
+│   ├── python/                 # Sequential Python implementation
+│   │   └── game_of_life_sequential.py
+│   ├── cuda/                   # Parallel CUDA implementation
+│   │   └── game_of_life.cu
+│   └── visual/                 # Interactive Pygame visualization
+│       └── game_of_life_visual.py
+├── benchmarks/                 # Benchmark results (CSV)
+├── docs/                       # Documentation
+│   └── IMPLEMENTATION.md
+├── build/                      # Compiled binaries (generated)
+├── run.sh                      # Main runner script
+└── README.md
+```
+
+## Quick Start
+
+```bash
+# Show all options
+./run.sh help
+
+# Run visual version (interactive)
+./run.sh visual
+
+# Run sequential version
+./run.sh sequential
+
+# Run CUDA version
+./run.sh cuda
+
+# Run all benchmarks
+./run.sh benchmark
+
+# Clean build artifacts
+./run.sh clean
+```
 
 ## Rules
 
@@ -9,12 +53,39 @@ Conway's Game of Life implementation with sequential (Python) and parallel (CUDA
 3. Any live cell with more than three live neighbors dies (overpopulation)
 4. Any dead cell with exactly three live neighbors becomes alive (reproduction)
 
-## Files
+## Visual Version (Pygame)
 
-| File | Description |
-|------|-------------|
-| `game_of_life_sequential.py` | Sequential Python implementation using NumPy |
-| `game_of_life.cu` | Parallel CUDA implementation with shared memory optimization |
+Interactive visualization with drawing capabilities.
+
+### Requirements
+
+- Python 3.10+
+- Pygame (`pip install pygame`)
+
+### Usage
+
+```bash
+# Default (120x80 grid, 10px cells)
+./run.sh visual
+
+# Custom: width height cell_size
+./run.sh visual 200 150 5
+```
+
+### Controls
+
+| Key | Action |
+|-----|--------|
+| **SPACE** | Pause/Resume simulation |
+| **R** | Reset with random grid |
+| **C** | Clear grid |
+| **G** | Add glider at mouse position |
+| **U** | Add glider gun at mouse position |
+| **LEFT CLICK** | Draw cells |
+| **RIGHT CLICK** | Erase cells |
+| **UP/DOWN** | Increase/Decrease speed |
+| **+/-** | Zoom in/out |
+| **ESC** | Quit |
 
 ## Python Sequential Implementation
 
@@ -26,21 +97,21 @@ Conway's Game of Life implementation with sequential (Python) and parallel (CUDA
 ### Usage
 
 ```bash
-# Run with default parameters (64x64 grid, 100 generations)
-python game_of_life_sequential.py
+# Default (64x64 grid, 100 generations)
+./run.sh sequential
 
-# Custom parameters: width, height, generations, visualize (0/1)
-python game_of_life_sequential.py 128 128 500 0
+# Custom: width height generations visualize(0/1)
+./run.sh sequential 128 128 500 0
 
-# Run benchmarks
-python game_of_life_sequential.py --benchmark
+# Benchmark mode
+./run.sh sequential --benchmark
 ```
 
 ### Features
 
-- Pure Python implementation (educational, slow)
+- Pure Python implementation (educational)
 - NumPy vectorized implementation (faster, default)
-- Toroidal grid wrapping (edges connect to opposite sides)
+- Toroidal grid wrapping
 - Console visualization for small grids
 - Built-in benchmarking
 
@@ -49,25 +120,19 @@ python game_of_life_sequential.py --benchmark
 ### Requirements
 
 - NVIDIA GPU with CUDA support
-- CUDA Toolkit
-
-### Compilation
-
-```bash
-nvcc -o game_of_life game_of_life.cu
-```
+- CUDA Toolkit (nvcc)
 
 ### Usage
 
 ```bash
-# Run with default parameters (64x64 grid, 100 generations)
-./game_of_life
+# Compile and run with defaults
+./run.sh cuda
 
-# Custom parameters: width, height, generations, visualize (0/1), seed
-./game_of_life 1024 1024 1000 0 42
+# Custom: width height generations visualize(0/1) seed
+./run.sh cuda 1024 1024 1000 0 42
 
-# Run benchmarks
-./game_of_life --benchmark
+# Benchmark mode
+./run.sh cuda --benchmark
 ```
 
 ### Features
@@ -80,35 +145,64 @@ nvcc -o game_of_life game_of_life.cu
 
 ## Benchmarking
 
-Both implementations include a benchmark mode that tests grid sizes: 32, 64, 128, 256, 512, and 1024.
+Both computational implementations include benchmark modes testing grid sizes: 32, 64, 128, 256, 512, 1024, 2048, and 4096.
 
 ```bash
-# Python
-python game_of_life_sequential.py --benchmark
-
-# CUDA
-./game_of_life --benchmark
+# Run all benchmarks
+./run.sh benchmark
 ```
 
-Results are saved to CSV files:
-- `benchmark_sequential.csv`
-- `benchmark_cuda.csv`
+Results are saved to:
+- `benchmarks/benchmark_sequential.csv`
+- `benchmarks/benchmark_cuda.csv`
 
-## Performance Comparison
+## Performance Results
 
-### Python Sequential Results (NumPy)
+### Python Sequential (NumPy)
 
-| Grid Size | Time/Generation | Throughput |
-|-----------|-----------------|------------|
-| 32x32     | 0.07 ms         | 13.8 M cells/s |
-| 64x64     | 0.08 ms         | 51.2 M cells/s |
-| 128x128   | 0.14 ms         | 117.8 M cells/s |
-| 256x256   | 0.34 ms         | 192.3 M cells/s |
-| 512x512   | 1.15 ms         | 228.3 M cells/s |
-| 1024x1024 | 4.76 ms         | 220.3 M cells/s |
+| Grid Size | Total Time | Time/Gen | Throughput |
+|-----------|------------|----------|------------|
+| 32x32 | 8.46 ms | 0.085 ms | 12 M cells/s |
+| 64x64 | 7.95 ms | 0.080 ms | 52 M cells/s |
+| 128x128 | 8.83 ms | 0.088 ms | 186 M cells/s |
+| 256x256 | 10.52 ms | 0.105 ms | 623 M cells/s |
+| 512x512 | 24.71 ms | 0.247 ms | 1,061 M cells/s |
+| 1024x1024 | 71.07 ms | 0.711 ms | 1,475 M cells/s |
+| 2048x2048 | 278.38 ms | 2.784 ms | 1,507 M cells/s |
+| 4096x4096 | 3,920.58 ms | 39.206 ms | 428 M cells/s |
 
-### CUDA Parallel Results
+### CUDA Parallel (Shared Memory)
 
-Run `./game_of_life --benchmark` on a machine with a GPU to generate results.
+| Grid Size | Total Time | Time/Gen | Throughput |
+|-----------|------------|----------|------------|
+| 32x32 | 0.21 ms | 0.002 ms | 480 M cells/s |
+| 64x64 | 0.23 ms | 0.002 ms | 1,793 M cells/s |
+| 128x128 | 0.24 ms | 0.002 ms | 6,750 M cells/s |
+| 256x256 | 0.38 ms | 0.004 ms | 17,418 M cells/s |
+| 512x512 | 0.89 ms | 0.009 ms | 29,305 M cells/s |
+| 1024x1024 | 3.01 ms | 0.030 ms | 34,873 M cells/s |
+| 2048x2048 | 13.04 ms | 0.130 ms | 32,159 M cells/s |
+| 4096x4096 | 44.77 ms | 0.448 ms | 37,478 M cells/s |
 
-Expected speedup: 10-100x over Python for large grids, depending on GPU.
+### Speedup (CUDA vs Python)
+
+| Grid Size | Python | CUDA | Speedup |
+|-----------|--------|------|---------|
+| 32x32 | 8.46 ms | 0.21 ms | **40x** |
+| 64x64 | 7.95 ms | 0.23 ms | **35x** |
+| 128x128 | 8.83 ms | 0.24 ms | **37x** |
+| 256x256 | 10.52 ms | 0.38 ms | **28x** |
+| 512x512 | 24.71 ms | 0.89 ms | **28x** |
+| 1024x1024 | 71.07 ms | 3.01 ms | **24x** |
+| 2048x2048 | 278.38 ms | 13.04 ms | **21x** |
+| 4096x4096 | 3,920.58 ms | 44.77 ms | **88x** |
+
+> Peak throughput: **37.5 billion cells/second** (CUDA, 4096x4096)
+
+## Documentation
+
+See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for detailed technical documentation including:
+- Algorithm explanations
+- CUDA kernel architecture
+- Shared memory optimization
+- Memory layout diagrams
