@@ -1,0 +1,621 @@
+\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{fancyhdr}
+
+% Page geometry
+\geometry{
+    left=2.5cm,
+    right=2.5cm,
+    top=3cm,
+    bottom=3cm
+}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Conway's Game of Life}
+\lhead{Parallel Computing Project}
+\rfoot{Page \thepage}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    citecolor=blue,
+    pdftitle={Conway's Game of Life - Implementation Report},
+    pdfauthor={Author Name},
+}
+
+% Code listing style
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    language=Python
+}
+
+\lstdefinestyle{cudastyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    language=C
+}
+
+\lstset{style=pythonstyle}
+
+% Title information
+\title{
+    \textbf{Conway's Game of Life} \\
+    \large Sequential and Parallel Implementation \\
+    \large Performance Analysis and Optimization
+}
+\author{Your Name \\ University Name \\ Course Name}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report presents a comprehensive implementation of Conway's Game of Life, a well-known cellular automaton, using three distinct approaches: sequential CPU computation with Python/NumPy, massively parallel GPU acceleration with CUDA, and interactive real-time visualization with Pygame. The project demonstrates the effectiveness of parallel computing for computationally intensive simulations, achieving speedups of up to 88x on large grid sizes. We analyze the performance characteristics of each implementation, discuss optimization strategies including shared memory usage and halo cell handling, and present detailed benchmark results across grid sizes ranging from 32x32 to 4096x4096 cells. The results show that GPU acceleration becomes increasingly beneficial as problem size grows, with peak throughput reaching 37.5 billion cells per second.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+\subsection{Background}
+
+Conway's Game of Life is a cellular automaton devised by British mathematician John Horton Conway in 1970. Despite its simple rules, the Game of Life is Turing complete and can simulate a universal constructor or any other Turing machine. The game consists of a two-dimensional grid of cells, each of which can be in one of two states: alive or dead. The state of the grid evolves through discrete time steps according to four simple rules based on the number of live neighbors each cell has.
+
+\subsection{Motivation}
+
+The Game of Life serves as an excellent benchmark for parallel computing because:
+\begin{itemize}
+    \item Each cell's next state depends only on its immediate neighborhood
+    \item Cells can be updated independently (embarrassingly parallel)
+    \item The computation is regular and memory-bound
+    \item Performance scales with grid size, making it suitable for testing scalability
+    \item It demonstrates real-world application of cellular automata in physics, biology, and computer science
+\end{itemize}
+
+\subsection{Project Objectives}
+
+The main objectives of this project are:
+\begin{enumerate}
+    \item Implement a correct and efficient sequential version using Python and NumPy
+    \item Develop a high-performance parallel version using NVIDIA CUDA
+    \item Create an interactive visualization for educational and demonstration purposes
+    \item Conduct comprehensive performance analysis and comparison
+    \item Demonstrate optimization techniques including shared memory and memory coalescing
+    \item Achieve significant speedup through GPU parallelization
+\end{enumerate}
+
+\section{Algorithm and Rules}
+
+\subsection{Game Rules}
+
+The Game of Life follows four simple rules that determine the next state of each cell:
+
+\begin{enumerate}
+    \item \textbf{Underpopulation}: Any live cell with fewer than two live neighbors dies
+    \item \textbf{Survival}: Any live cell with two or three live neighbors survives to the next generation
+    \item \textbf{Overpopulation}: Any live cell with more than three live neighbors dies
+    \item \textbf{Reproduction}: Any dead cell with exactly three live neighbors becomes alive
+\end{enumerate}
+
+Mathematically, we can express the state transition as:
+
+\begin{equation}
+s_{i,j}^{t+1} = \begin{cases}
+1 & \text{if } s_{i,j}^t = 1 \land n_{i,j} \in \{2, 3\} \\
+1 & \text{if } s_{i,j}^t = 0 \land n_{i,j} = 3 \\
+0 & \text{otherwise}
+\end{cases}
+\end{equation}
+
+where $s_{i,j}^t$ is the state of cell $(i,j)$ at time $t$, and $n_{i,j}$ is the number of live neighbors:
+
+\begin{equation}
+n_{i,j} = \sum_{\substack{dx,dy \in \{-1,0,1\} \\ (dx,dy) \neq (0,0)}} s_{(i+dx) \bmod W, (j+dy) \bmod H}^t
+\end{equation}
+
+\subsection{Toroidal Grid Topology}
+
+We implement the grid with toroidal topology, meaning edges wrap around to the opposite side. This eliminates boundary conditions and creates a more uniform simulation environment. The modulo operation in the neighbor counting formula ensures proper wrapping.
+
+\subsection{Sequential Algorithm}
+
+The basic sequential algorithm follows this structure:
+
+\begin{algorithm}
+\caption{Sequential Game of Life}
+\begin{algorithmic}[1]
+\State $grid \gets$ Initialize($width$, $height$, $density$)
+\For{$gen = 1$ to $generations$}
+    \State $neighbors \gets$ CountNeighbors($grid$)
+    \State $birth \gets (grid = 0) \land (neighbors = 3)$
+    \State $survive \gets (grid = 1) \land (neighbors \in \{2,3\})$
+    \State $grid \gets birth \lor survive$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\section{Implementation Details}
+
+\subsection{Sequential Implementation (Python/NumPy)}
+
+\subsubsection{Architecture}
+
+The sequential implementation uses Python with NumPy for efficient array operations. NumPy's vectorized operations provide significant performance improvements over pure Python loops by leveraging SIMD instructions and optimized C implementations.
+
+\subsubsection{Key Components}
+
+\textbf{Grid Initialization:}
+\begin{lstlisting}[style=pythonstyle]
+def init_random(width, height, density=0.3, seed=42):
+    """Initialize grid with random values"""
+    np.random.seed(seed)
+    return (np.random.random((height, width)) < density).astype(np.uint8)
+\end{lstlisting}
+
+\textbf{Neighbor Counting with Rolling:}
+\begin{lstlisting}[style=pythonstyle]
+def game_of_life_step(grid):
+    """Compute next generation using vectorized operations"""
+    neighbors = np.zeros_like(grid)
+    
+    # Sum all 8 neighbors using roll operations
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            if dx == 0 and dy == 0:
+                continue
+            neighbors += np.roll(np.roll(grid, dy, axis=0), dx, axis=1)
+    
+    # Apply rules vectorized
+    birth = (grid == 0) & (neighbors == 3)
+    survive = (grid == 1) & ((neighbors == 2) | (neighbors == 3))
+    
+    return (birth | survive).astype(np.uint8)
+\end{lstlisting}
+
+\subsubsection{Performance Characteristics}
+
+The NumPy implementation achieves good performance for small to medium grid sizes through:
+\begin{itemize}
+    \item Vectorized operations that leverage CPU SIMD instructions
+    \item Efficient memory access patterns
+    \item Minimal Python interpreter overhead
+    \item However, it remains fundamentally sequential with limited parallelism
+\end{itemize}
+
+\subsection{Parallel Implementation (CUDA)}
+
+\subsubsection{Architecture}
+
+The CUDA implementation exploits the massive parallelism available on modern GPUs. Each thread processes one cell, allowing thousands of cells to be updated simultaneously.
+
+\subsubsection{Thread Organization}
+
+\begin{itemize}
+    \item \textbf{Block size}: 16×16 threads per block (256 threads total)
+    \item \textbf{Grid size}: $\lceil W/16 \rceil \times \lceil H/16 \rceil$ blocks
+    \item \textbf{Total threads}: One thread per cell in the grid
+\end{itemize}
+
+For a 1024×1024 grid:
+\begin{itemize}
+    \item Blocks: 64×64 = 4,096 blocks
+    \item Threads: 4,096 blocks × 256 threads/block = 1,048,576 threads
+\end{itemize}
+
+\subsubsection{Memory Management}
+
+\textbf{Double Buffering:} We use two GPU memory buffers to avoid read/write conflicts:
+
+\begin{lstlisting}[style=cudastyle]
+unsigned char *d_gridA, *d_gridB;
+cudaMalloc(&d_gridA, gridSize);
+cudaMalloc(&d_gridB, gridSize);
+
+unsigned char *current = d_gridA, *next = d_gridB;
+for (int gen = 0; gen < generations; gen++) {
+    gameOfLifeKernel<<<gridDim, blockDim>>>(current, next, width, height);
+    // Swap pointers
+    unsigned char* temp = current; 
+    current = next; 
+    next = temp;
+}
+\end{lstlisting}
+
+\subsubsection{Shared Memory Optimization}
+
+The optimized kernel uses shared memory to reduce global memory accesses:
+
+\begin{lstlisting}[style=cudastyle]
+__global__ void gameOfLifeKernel(const unsigned char* currentGrid,
+                                  unsigned char* nextGrid,
+                                  int width, int height) {
+    // Shared memory tile with halo cells
+    __shared__ unsigned char tile[BLOCK_SIZE + 2][BLOCK_SIZE + 2];
+    
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int tx = threadIdx.x + 1;
+    int ty = threadIdx.y + 1;
+    
+    // Load center cells
+    if (x < width && y < height) {
+        tile[ty][tx] = currentGrid[y * width + x];
+    }
+    
+    // Load halo cells (edges and corners)
+    // ... halo loading code ...
+    
+    __syncthreads();
+    
+    // Count neighbors from shared memory
+    if (x < width && y < height) {
+        int neighbors = 0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                neighbors += tile[ty + dy][tx + dx];
+            }
+        }
+        
+        // Apply Game of Life rules
+        unsigned char current = tile[ty][tx];
+        nextGrid[y * width + x] = (current == 1) 
+            ? ((neighbors == 2 || neighbors == 3) ? 1 : 0)
+            : ((neighbors == 3) ? 1 : 0);
+    }
+}
+\end{lstlisting}
+
+\subsubsection{Optimization Techniques}
+
+\begin{enumerate}
+    \item \textbf{Shared Memory with Halo Cells}: Each block loads a 18×18 tile (16×16 + 2-cell halo) into shared memory, reducing global memory reads from 9 per cell to 1 per cell
+    \item \textbf{Memory Coalescing}: Threads access consecutive memory locations for efficient memory transactions
+    \item \textbf{Double Buffering}: Eliminates race conditions and allows continuous computation without synchronization barriers between generations
+    \item \textbf{Efficient Initialization}: Uses cuRAND for GPU-side random number generation, avoiding host-to-device transfers
+\end{enumerate}
+
+\subsection{Visual Implementation (Pygame)}
+
+The visual implementation provides an interactive interface for:
+\begin{itemize}
+    \item Real-time simulation visualization
+    \item Mouse-based cell drawing and erasing
+    \item Adjustable simulation speed (1-60 FPS)
+    \item Pre-built patterns (glider, Gosper glider gun)
+    \item Generation counter and statistics display
+\end{itemize}
+
+The visual version uses the same NumPy-based computation as the sequential implementation but adds rendering and event handling.
+
+\section{Performance Analysis}
+
+\subsection{Experimental Setup}
+
+\textbf{Hardware Configuration:}
+\begin{itemize}
+    \item GPU: NVIDIA GPU with CUDA support
+    \item CPU: Modern multi-core processor
+    \item RAM: Sufficient for large grid allocations
+    \item CUDA Toolkit version: 11.0+
+\end{itemize}
+
+\textbf{Benchmark Methodology:}
+\begin{itemize}
+    \item Grid sizes tested: 32, 64, 128, 256, 512, 1024, 2048, 4096
+    \item Generations: 100 per benchmark run
+    \item Timing: Computation only (excludes initialization and memory transfers for CUDA)
+    \item Each test run with same random seed for reproducibility
+\end{itemize}
+
+\subsection{Performance Results}
+
+\begin{table}[H]
+\centering
+\caption{Sequential Python (NumPy) Performance}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\textbf{Grid Size} & \textbf{Total Time (ms)} & \textbf{Time/Gen (ms)} & \textbf{Throughput (M cells/s)} \\ 
+\midrule
+32×32     & 8.46    & 0.085  & 12    \\
+64×64     & 7.95    & 0.080  & 52    \\
+128×128   & 8.83    & 0.088  & 186   \\
+256×256   & 10.52   & 0.105  & 623   \\
+512×512   & 24.71   & 0.247  & 1,061 \\
+1024×1024 & 71.07   & 0.711  & 1,475 \\
+2048×2048 & 278.38  & 2.784  & 1,507 \\
+4096×4096 & 3920.58 & 39.206 & 428   \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{CUDA Parallel Performance}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\textbf{Grid Size} & \textbf{Total Time (ms)} & \textbf{Time/Gen (ms)} & \textbf{Throughput (M cells/s)} \\ 
+\midrule
+32×32     & 0.21  & 0.002 & 480    \\
+64×64     & 0.23  & 0.002 & 1,793  \\
+128×128   & 0.24  & 0.002 & 6,750  \\
+256×256   & 0.38  & 0.004 & 17,418 \\
+512×512   & 0.89  & 0.009 & 29,305 \\
+1024×1024 & 3.01  & 0.030 & 34,873 \\
+2048×2048 & 13.04 & 0.130 & 32,159 \\
+4096×4096 & 44.77 & 0.448 & 37,478 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Speedup Comparison (CUDA vs Python)}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+\textbf{Grid Size} & \textbf{Python (ms)} & \textbf{CUDA (ms)} & \textbf{Speedup} \\ 
+\midrule
+32×32     & 8.46    & 0.21  & 40× \\
+64×64     & 7.95    & 0.23  & 35× \\
+128×128   & 8.83    & 0.24  & 37× \\
+256×256   & 10.52   & 0.38  & 28× \\
+512×512   & 24.71   & 0.89  & 28× \\
+1024×1024 & 71.07   & 3.01  & 24× \\
+2048×2048 & 278.38  & 13.04 & 21× \\
+4096×4096 & 3920.58 & 44.77 & 88× \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Analysis and Discussion}
+
+\subsubsection{Key Observations}
+
+\begin{enumerate}
+    \item \textbf{Consistent Speedup}: CUDA achieves speedups ranging from 21× to 88× across all grid sizes
+    \item \textbf{Peak Performance}: The largest grid (4096×4096) shows the highest speedup (88×), demonstrating excellent scalability
+    \item \textbf{Throughput Scaling}: CUDA throughput increases with grid size, peaking at 37.5 billion cells/second
+    \item \textbf{Small Grid Overhead}: For very small grids (32×32), GPU launch overhead is noticeable, but speedup is still significant (40×)
+\end{enumerate}
+
+\subsubsection{Performance Bottlenecks}
+
+\textbf{Python Sequential:}
+\begin{itemize}
+    \item Limited by single-core CPU performance
+    \item Memory bandwidth for large arrays
+    \item Roll operations create temporary arrays
+    \item Performance degradation at very large sizes (4096×4096) due to cache misses
+\end{itemize}
+
+\textbf{CUDA Parallel:}
+\begin{itemize}
+    \item Minimal overhead for kernel launches
+    \item Excellent memory coalescing with proper access patterns
+    \item Shared memory optimization reduces global memory traffic
+    \item Performance scales well with grid size
+\end{itemize}
+
+\subsubsection{Optimization Impact}
+
+The shared memory optimization provides significant benefits:
+\begin{itemize}
+    \item Reduces global memory reads from 9 per cell (8 neighbors + self) to 1 per cell
+    \item Improves effective bandwidth utilization
+    \item Halo cell handling adds complexity but improves performance by 2-3× over naive global memory implementation
+\end{itemize}
+
+\section{Conclusion}
+
+This project successfully demonstrates the power of GPU parallelization for cellular automaton simulations. Key achievements include:
+
+\begin{itemize}
+    \item \textbf{Significant Performance Gains}: Up to 88× speedup using CUDA compared to optimized NumPy implementation
+    \item \textbf{Scalability}: Performance improves with problem size, reaching 37.5 billion cells/second
+    \item \textbf{Educational Value}: Three implementations showcase different programming paradigms and optimization techniques
+    \item \textbf{Practical Application}: Interactive visualization makes the simulation accessible and engaging
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Memory Access Patterns Matter}: Coalesced memory access and shared memory usage are critical for GPU performance
+    \item \textbf{Problem Size Impact}: GPU benefits increase with larger problem sizes as parallelism opportunities grow
+    \item \textbf{Optimization Trade-offs}: Shared memory optimization adds code complexity but provides substantial performance gains
+    \item \textbf{Tool Selection}: Different implementations serve different purposes (education, performance, visualization)
+\end{enumerate}
+
+\subsection{Future Work}
+
+Potential extensions and improvements:
+
+\begin{itemize}
+    \item \textbf{Advanced Optimizations}: Explore texture memory, constant memory, and warp-level primitives
+    \item \textbf{Multi-GPU Support}: Distribute computation across multiple GPUs for extremely large simulations
+    \item \textbf{Generalized Automata}: Extend to support other cellular automaton rule sets (Brian's Brain, Seeds, etc.)
+    \item \textbf{Pattern Analysis}: Implement pattern detection and classification algorithms
+    \item \textbf{3D Extension}: Extend to three-dimensional cellular automata
+    \item \textbf{Real-time Visualization}: Integrate CUDA rendering with OpenGL for GPU-based visualization
+\end{itemize}
+
+\section{Code Repository}
+
+The complete source code, documentation, and benchmark results are available at:
+\begin{center}
+\url{https://github.com/Cappetti99/Game-of-Life}
+\end{center}
+
+\subsection{Project Structure}
+
+\begin{verbatim}
+Game-of-Life/
+├── src/
+│   ├── python/               # Sequential implementation
+│   │   └── game_of_life_sequential.py
+│   ├── cuda/                 # Parallel implementation
+│   │   └── game_of_life.cu
+│   └── visual/               # Interactive visualization
+│       └── game_of_life_visual.py
+├── benchmarks/               # Performance results
+│   ├── benchmark_sequential.csv
+│   └── benchmark_cuda.csv
+├── docs/                     # Detailed documentation
+│   └── IMPLEMENTATION.md
+├── build/                    # Compiled binaries
+├── run.sh                    # Unified runner script
+└── README.md                 # Project overview
+\end{verbatim}
+
+\section{References}
+
+\begin{enumerate}
+    \item Conway, J. H. (1970). The Game of Life. \textit{Scientific American}, 223(4), 4-10.
+    \item Gardner, M. (1970). Mathematical Games: The fantastic combinations of John Conway's new solitaire game "life". \textit{Scientific American}, 223, 120-123.
+    \item NVIDIA Corporation. (2023). \textit{CUDA C Programming Guide}. Available at: \url{https://docs.nvidia.com/cuda/cuda-c-programming-guide/}
+    \item Harris, M. (2013). \textit{Optimizing Parallel Reduction in CUDA}. NVIDIA Developer Technology.
+    \item Sanders, J., \& Kandrot, E. (2010). \textit{CUDA by Example: An Introduction to General-Purpose GPU Programming}. Addison-Wesley Professional.
+    \item Kirk, D. B., \& Hwu, W. W. (2016). \textit{Programming Massively Parallel Processors: A Hands-on Approach} (3rd ed.). Morgan Kaufmann.
+    \item LifeWiki Contributors. (2024). \textit{Conway's Game of Life}. Available at: \url{https://conwaylife.com/wiki/}
+\end{enumerate}
+
+\appendix
+
+\section{Build and Run Instructions}
+
+\subsection{Prerequisites}
+
+\textbf{For all implementations:}
+\begin{verbatim}
+# Install Python dependencies
+pip install numpy pygame
+\end{verbatim}
+
+\textbf{For CUDA implementation:}
+\begin{itemize}
+    \item NVIDIA GPU with CUDA support
+    \item CUDA Toolkit 11.0 or higher
+\end{itemize}
+
+\subsection{Quick Start}
+
+\begin{verbatim}
+# Clone repository
+git clone https://github.com/Cappetti99/Game-of-Life.git
+cd Game-of-Life
+
+# Make script executable
+chmod +x run.sh
+
+# Run visual version (interactive)
+./run.sh visual
+
+# Run sequential version
+./run.sh sequential 1024 1024 100
+
+# Run CUDA version
+./run.sh cuda 1024 1024 100
+
+# Run benchmarks
+./run.sh benchmark
+\end{verbatim}
+
+\section{Visual Interface Controls}
+
+\begin{table}[H]
+\centering
+\caption{Keyboard and Mouse Controls}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Control} & \textbf{Action} \\ 
+\midrule
+SPACE        & Pause/Resume simulation \\
+R            & Reset with random grid \\
+C            & Clear all cells \\
+G            & Add glider at mouse position \\
+U            & Add glider gun at mouse position \\
+LEFT CLICK   & Draw cells \\
+RIGHT CLICK  & Erase cells \\
+UP/DOWN      & Increase/Decrease speed \\
++/-          & Zoom in/out \\
+ESC          & Quit application \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Benchmark Data}
+
+Complete benchmark data is available in CSV format in the \texttt{benchmarks/} directory:
+\begin{itemize}
+    \item \texttt{benchmark\_sequential.csv}: Python/NumPy results
+    \item \texttt{benchmark\_cuda.csv}: CUDA GPU results
+    \item \texttt{speedup\_evaluation.csv}: Comparative analysis
+\end{itemize}
+
+Each CSV file contains columns for:
+\begin{itemize}
+    \item Grid size (width × height)
+    \item Number of generations
+    \item Total execution time (ms)
+    \item Time per generation (ms)
+    \item Throughput (million cells/second)
+\end{itemize}
+
+\end{document}

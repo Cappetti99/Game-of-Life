@@ -1,9 +1,14 @@
-# Game of Life
+# Conway's Game of Life - Multi-Implementation Project
 
-Conway's Game of Life implementation with three versions:
-- **Sequential** (Python/NumPy) - For learning and prototyping
-- **Parallel** (CUDA) - High-performance GPU computation
-- **Visual** (Pygame) - Interactive real-time visualization
+A comprehensive implementation of Conway's Game of Life featuring three distinct versions optimized for different use cases: sequential CPU computation, massively parallel GPU acceleration, and interactive real-time visualization.
+
+## Overview
+
+Conway's Game of Life is a cellular automaton devised by mathematician John Conway in 1970. This project demonstrates the power of parallel computing by implementing the same algorithm in multiple ways:
+
+- **Sequential** (Python/NumPy) - Educational implementation for learning and prototyping
+- **Parallel** (CUDA) - High-performance GPU computation achieving up to 88x speedup
+- **Visual** (Pygame) - Interactive real-time visualization with drawing capabilities
 
 ## Project Structure
 
@@ -46,12 +51,16 @@ Game-of-Life/
 ./run.sh clean
 ```
 
-## Rules
+## Game Rules
 
-1. Any live cell with fewer than two live neighbors dies (underpopulation)
-2. Any live cell with two or three live neighbors lives on
-3. Any live cell with more than three live neighbors dies (overpopulation)
-4. Any dead cell with exactly three live neighbors becomes alive (reproduction)
+The simulation follows four simple rules that create complex emergent behavior:
+
+1. **Underpopulation**: Any live cell with fewer than two live neighbors dies
+2. **Survival**: Any live cell with two or three live neighbors lives on to the next generation
+3. **Overpopulation**: Any live cell with more than three live neighbors dies
+4. **Reproduction**: Any dead cell with exactly three live neighbors becomes alive
+
+These simple rules lead to fascinating patterns including oscillators, spaceships, and even Turing-complete constructions.
 
 ## Visual Version (Pygame)
 
@@ -158,6 +167,8 @@ Results are saved to:
 
 ## Performance Results
 
+The CUDA implementation demonstrates significant performance gains over the sequential Python version, with speedup increasing for larger grid sizes.
+
 ### Python Sequential (NumPy)
 
 | Grid Size | Total Time | Time/Gen | Throughput |
@@ -198,11 +209,117 @@ Results are saved to:
 | 4096x4096 | 3,920.58 ms | 44.77 ms | **88x** |
 
 > Peak throughput: **37.5 billion cells/second** (CUDA, 4096x4096)
+> 
+> The CUDA implementation shows consistent performance advantages, with speedup ranging from 21x to 88x depending on grid size. The largest grids benefit most from GPU parallelization.
+
+## Key Features
+
+### All Implementations
+- Toroidal grid topology (edges wrap around)
+- Reproducible random initialization with seed support
+- Comprehensive benchmarking capabilities
+- CSV export of benchmark results
+
+### Sequential Implementation
+- Pure Python and NumPy vectorized implementations
+- Educational code structure for learning
+- Efficient for small to medium grids
+- No special hardware requirements
+
+### CUDA Implementation
+- Optimized shared memory kernel with halo cells
+- Double buffering to eliminate read/write conflicts
+- cuRAND for GPU-side random initialization
+- CUDA events for accurate timing
+- Scales efficiently to very large grids (4096x4096+)
+
+### Visual Implementation
+- Real-time interactive simulation
+- Mouse-based cell drawing and erasing
+- Adjustable simulation speed (1-60 FPS)
+- Pre-built patterns (glider, Gosper glider gun)
+- Generation counter and live cell statistics
 
 ## Documentation
 
-See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for detailed technical documentation including:
-- Algorithm explanations
-- CUDA kernel architecture
-- Shared memory optimization
-- Memory layout diagrams
+- [IMPLEMENTATION.md](docs/IMPLEMENTATION.md) - Detailed technical documentation including:
+  - Algorithm explanations and pseudocode
+  - CUDA kernel architecture and optimization strategies
+  - Shared memory layout with halo cell handling
+  - Memory management and double buffering
+  - Performance analysis and bottleneck discussion
+
+## System Requirements
+
+### Sequential Python Implementation
+- Python 3.10 or higher
+- NumPy library (`pip install numpy`)
+- Works on any system (Windows, Linux, macOS)
+
+### CUDA Parallel Implementation
+- NVIDIA GPU with CUDA support (Compute Capability 3.0+)
+- CUDA Toolkit 11.0 or higher (includes nvcc compiler)
+- Linux recommended (also works on Windows with CUDA installed)
+
+### Visual Implementation
+- Python 3.10 or higher
+- Pygame library (`pip install pygame`)
+- Works on any system with graphics support
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Cappetti99/Game-of-Life.git
+cd Game-of-Life
+
+# Install Python dependencies
+pip install numpy pygame
+
+# Make the runner script executable
+chmod +x run.sh
+
+# Test the installation
+./run.sh help
+```
+
+## Project Structure Details
+
+The project is organized for clarity and separation of concerns:
+
+- `src/python/` - Sequential CPU implementation using NumPy
+- `src/cuda/` - Parallel GPU implementation using CUDA C++
+- `src/visual/` - Interactive visualization using Pygame
+- `benchmarks/` - Performance measurement results (generated)
+- `docs/` - Detailed technical documentation
+- `build/` - Compiled CUDA binaries (generated)
+- `run.sh` - Unified interface for all implementations
+
+## Contributing
+
+Contributions are welcome! Areas for improvement:
+- Additional optimization techniques (texture memory, warp-level primitives)
+- Support for different cellular automaton rules
+- Web-based visualization using WebGL
+- Multi-GPU support for extremely large grids
+- Pattern recognition and analysis tools
+
+## License
+
+This project is open source and available for educational purposes.
+
+## References
+
+- [Conway's Game of Life - Wikipedia](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life)
+- [CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
+- [LifeWiki - Pattern Database](https://conwaylife.com/wiki/)
+
+## Documentation
+
+## Author
+
+Created as a demonstration of parallel computing techniques and GPU acceleration for cellular automaton simulations.
+
+---
+
+For detailed implementation information, see [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).

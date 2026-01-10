@@ -12,7 +12,9 @@
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 
+#ifndef BLOCK_SIZE
 #define BLOCK_SIZE 16
+#endif
 #define DEFAULT_SEED 42
 
 #define CUDA_CHECK(call)                                                       \
