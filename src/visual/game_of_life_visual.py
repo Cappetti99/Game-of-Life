@@ -75,9 +75,7 @@ class GameOfLife:
     def add_glider_gun(self, x: int, y: int):
         if x + 36 >= self.grid_width or y + 9 >= self.grid_height or x < 0 or y < 4:
             return
-        # Left square
         self.grid[y:y+2, x:x+2] = 1
-        # Left part
         self.grid[y:y+3, x+10] = 1
         self.grid[y-1, x+11] = self.grid[y+3, x+11] = 1
         self.grid[y-2, x+12:x+14] = self.grid[y+4, x+12:x+14] = 1
@@ -85,12 +83,10 @@ class GameOfLife:
         self.grid[y-1, x+15] = self.grid[y+3, x+15] = 1
         self.grid[y:y+3, x+16] = 1
         self.grid[y+1, x+17] = 1
-        # Right part
         self.grid[y-2:y+1, x+20:x+22] = 1
         self.grid[y-3, x+22] = self.grid[y+1, x+22] = 1
         self.grid[y-4, x+24] = self.grid[y-3, x+24] = 1
         self.grid[y+1, x+24] = self.grid[y+2, x+24] = 1
-        # Right square
         self.grid[y-2:y, x+34:x+36] = 1
         
     def step(self):

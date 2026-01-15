@@ -12,13 +12,11 @@ import csv
 import time
 from pathlib import Path
 
-# Configuration
 GRID_SIZES = [128, 256, 512, 1024, 2048]
 BLOCK_SIZES = [4, 8, 16, 32]  # Different thread configurations
 GENERATIONS = 100
 SEED = 42
 
-# Paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
 BUILD_DIR = PROJECT_ROOT / "build"
@@ -37,9 +35,16 @@ def run_sequential(size, generations):
             check=True
         )
         
-        # Parse output for timing
+        # Parse output for timing (handles both single run and averaged output)
         for line in result.stdout.split('\n'):
-            if 'Total time:' in line:
+            # Check for mean time first (from averaged runs)
+            if 'Mean time:' in line:
+                # Extract "Mean time: 71.08 ± 0.42 ms"
+                parts = line.split(':')[1].strip().split()
+                time_ms = float(parts[0])
+                return time_ms
+            # Fallback to single run format
+            elif 'Total time:' in line:
                 time_ms = float(line.split(':')[1].strip().split()[0])
                 return time_ms
         
@@ -77,15 +82,22 @@ def run_cuda(cuda_bin, size, generations):
     """Run CUDA implementation and return execution time in ms."""
     try:
         result = subprocess.run(
-            [str(cuda_bin), str(size), str(size), str(generations), str(SEED)],
+            [str(cuda_bin), str(size), str(size), str(generations), "0", str(SEED)],
             capture_output=True,
             text=True,
             check=True
         )
         
-        # Parse output for timing
+        # Parse output for timing (handles both single run and averaged output)
         for line in result.stdout.split('\n'):
-            if 'Total time:' in line:
+            # Check for mean time first (from averaged runs)
+            if 'Mean time:' in line:
+                # Extract "Mean time: 2.84 ± 0.12 ms"
+                parts = line.split(':')[1].strip().split()
+                time_ms = float(parts[0])
+                return time_ms
+            # Fallback to single run format
+            elif 'Total time:' in line:
                 time_ms = float(line.split(':')[1].strip().split()[0])
                 return time_ms
         
@@ -103,23 +115,19 @@ def main():
     print("=" * 80)
     print()
     
-    # Check for nvcc
     if not subprocess.run(["which", "nvcc"], capture_output=True).returncode == 0:
         print("Error: nvcc not found. CUDA toolkit required.")
         sys.exit(1)
     
     BENCHMARK_DIR.mkdir(exist_ok=True)
     
-    # Results storage
     results = []
     
-    # For each grid size
     for size in GRID_SIZES:
         print(f"\n{'=' * 80}")
         print(f"Grid Size: {size}x{size}, Generations: {GENERATIONS}")
         print(f"{'=' * 80}")
         
-        # Run sequential
         print(f"Running sequential version...")
         seq_time = run_sequential(size, GENERATIONS)
         
@@ -136,16 +144,13 @@ def main():
             'speedups': {}
         }
         
-        # Run CUDA with different block sizes
         for block_size in BLOCK_SIZES:
             print(f"\nBlock size: {block_size}x{block_size} (threads per block: {block_size**2})")
             
-            # Compile with this block size
             cuda_bin = compile_cuda(block_size)
             if cuda_bin is None:
                 continue
             
-            # Run CUDA
             print(f"  Running CUDA version...")
             cuda_time = run_cuda(cuda_bin, size, GENERATIONS)
             
@@ -192,13 +197,11 @@ def main():
     with open(csv_path, 'w', newline='') as f:
         writer = csv.writer(f)
         
-        # Header
         header_row = ['grid_size', 'sequential_time_ms']
         for bs in BLOCK_SIZES:
             header_row.extend([f'cuda_bs{bs}_time_ms', f'speedup_bs{bs}'])
         writer.writerow(header_row)
         
-        # Data
         for r in results:
             row = [r['size'], f"{r['sequential_ms']:.4f}"]
             for bs in BLOCK_SIZES:

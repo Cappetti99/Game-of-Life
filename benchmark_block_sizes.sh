@@ -1,14 +1,5 @@
 #!/bin/bash
 
-################################################################################
-# Master Script - Analisi Completa Block Size per Game of Life
-# 
-# Questo script esegue:
-# 1. Benchmark di tutte le configurazioni
-# 2. Analisi dei risultati
-################################################################################
-
-# Colori
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -17,13 +8,12 @@ BLUE='\033[0;34m'
 MAGENTA='\033[0;35m'
 NC='\033[0m'
 
-# Banner
 show_banner() {
     clear
     echo -e "${CYAN}"
     echo "╔════════════════════════════════════════════════════════════════════╗"
     echo "║                                                                    ║"
-    echo "║        🎯 CUDA BLOCK SIZE OPTIMIZATION ANALYZER 🎯                ║"
+    echo "║        CUDA BLOCK SIZE OPTIMIZATION ANALYZER                 ║"
     echo "║                                                                    ║"
     echo "║              Conway's Game of Life - Full Analysis                ║"
     echo "║                                                                    ║"
@@ -37,12 +27,11 @@ check_prerequisites() {
     
     local all_ok=true
     
-    # Check nvcc
     if ! command -v nvcc &> /dev/null; then
-        echo -e "${RED}  ✗ nvcc not found - CUDA toolkit required${NC}"
+        echo -e "${RED}  nvcc not found - CUDA toolkit required${NC}"
         all_ok=false
     else
-        echo -e "${GREEN}  ✓ nvcc found${NC}"
+        echo -e "${GREEN}  nvcc found${NC}"
     fi
     
     if [ "$all_ok" = false ]; then
@@ -56,22 +45,20 @@ check_prerequisites() {
 # Run benchmarks
 run_benchmarks() {
     echo -e "${BLUE}[2/3] Running benchmarks...${NC}"
-    echo -e "${YELLOW}  This will take approximately 5-10 minutes${NC}\n"
+    echo -e "${YELLOW}  This will take approximately 15-20 minutes (with averaging)${NC}\n"
     
-    # Configuration
     BLOCK_SIZES=(1 4 8 16 32)
     GRID_SIZES=(256 512 1024 2048)
     GENERATIONS=100
+    WARMUP_RUNS=2
+    MEASURE_RUNS=10
     
-    # Setup directories
     mkdir -p build/block_tests
     mkdir -p benchmarks
     
-    # Results file
     RESULTS_FILE="benchmarks/block_size_comparison.csv"
-    echo "block_size,grid_size,generations,time_ms,time_per_gen_ms,throughput_mcells_s" > $RESULTS_FILE
+    echo "block_size,grid_size,generations,runs,mean_time_ms,std_time_ms,median_time_ms,min_time_ms,max_time_ms,mean_throughput_mcells_s,std_throughput_mcells_s,cv_percent" > $RESULTS_FILE
     
-    # Compile all versions
     echo -e "${CYAN}  Compiling CUDA kernels...${NC}"
     for BS in "${BLOCK_SIZES[@]}"; do
         printf "    BS=%2d: " $BS
@@ -81,16 +68,15 @@ run_benchmarks() {
              -O3 2>&1 | grep -q "error"
         
         if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo -e "${GREEN}✓${NC}"
+            echo -e "${GREEN}Compiled${NC}"
         else
-            echo -e "${RED}✗${NC}"
+            echo -e "${RED}Failed${NC}"
             exit 1
         fi
     done
     
     echo ""
     
-    # Run benchmarks
     total_tests=$((${#BLOCK_SIZES[@]} * ${#GRID_SIZES[@]}))
     current_test=0
     
@@ -103,27 +89,57 @@ run_benchmarks() {
             
             printf "    BS=%2d [%3d%%]: " $BS $progress
             
-            # Run and capture output
-            output=$(./build/block_tests/game_of_life_bs${BS} ${GRID} ${GRID} ${GENERATIONS} 0 42 2>&1)
+            declare -a times
             
-            # Extract metrics
-            time_ms=$(echo "$output" | grep "Total time:" | awk '{print $3}')
+            for ((w=0; w<WARMUP_RUNS; w++)); do
+                ./build/block_tests/game_of_life_bs${BS} ${GRID} ${GRID} ${GENERATIONS} 0 42 &>/dev/null
+            done
             
-            if [ -n "$time_ms" ]; then
-                time_per_gen=$(echo "scale=6; $time_ms / $GENERATIONS" | bc)
-                throughput=$(echo "scale=4; $GRID * $GRID * $GENERATIONS / $time_ms / 1000" | bc)
+            for ((m=0; m<MEASURE_RUNS; m++)); do
+                output=$(./build/block_tests/game_of_life_bs${BS} ${GRID} ${GRID} ${GENERATIONS} 0 42 2>&1)
+                time_ms=$(echo "$output" | grep "Total time:" | awk '{print $3}')
+                times+=($time_ms)
+            done
+            
+            stats=$(python3 -c "
+import sys
+import math
+
+times = [${times[*]}]
+n = len(times)
+
+mean = sum(times) / n
+variance = sum((x - mean) ** 2 for x in times) / (n - 1)
+std_dev = math.sqrt(variance)
+median = sorted(times)[n // 2] if n % 2 else (sorted(times)[n//2-1] + sorted(times)[n//2]) / 2
+min_time = min(times)
+max_time = max(times)
+cv = (std_dev / mean * 100) if mean > 0 else 0
+
+throughput = ${GRID} * ${GRID} * ${GENERATIONS} / mean / 1000
+std_throughput = throughput * (std_dev / mean) if mean > 0 else 0
+
+print(f'{mean:.4f},{std_dev:.4f},{median:.4f},{min_time:.4f},{max_time:.4f},{throughput:.4f},{std_throughput:.4f},{cv:.4f}')
+")
+            
+            if [ -n "$stats" ]; then
+                echo "${BS},${GRID},${GENERATIONS},${MEASURE_RUNS},${stats}" >> $RESULTS_FILE
                 
-                echo "${BS},${GRID},${GENERATIONS},${time_ms},${time_per_gen},${throughput}" >> $RESULTS_FILE
+                mean_time=$(echo $stats | cut -d',' -f1)
+                throughput=$(echo $stats | cut -d',' -f6)
+                cv=$(echo $stats | cut -d',' -f8)
                 
-                echo -e "${GREEN}${time_ms} ms (${throughput} M cells/s)${NC}"
+                echo -e "${GREEN}${mean_time} ms (${throughput} M cells/s, CV ${cv}%)${NC}"
             else
                 echo -e "${RED}Failed${NC}"
             fi
+            
+            unset times
         done
         echo ""
     done
     
-    echo -e "${GREEN}  ✓ Benchmarks completed!${NC}\n"
+    echo -e "${GREEN}  Benchmarks completed!${NC}\n"
 }
 
 # Show results
@@ -131,10 +147,9 @@ show_results() {
     echo -e "${BLUE}[3/3] Analysis complete!${NC}\n"
     
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}                     ${GREEN}📊 RESULTS SUMMARY${NC}                        ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                     ${GREEN}RESULTS SUMMARY${NC}                        ${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}\n"
     
-    # Parse best configuration from CSV
     if [ -f "benchmarks/block_size_comparison.csv" ]; then
         best_line=$(tail -n +2 benchmarks/block_size_comparison.csv | \
                     sort -t',' -k6 -nr | head -n1)
@@ -143,23 +158,23 @@ show_results() {
         best_grid=$(echo $best_line | cut -d',' -f2)
         best_throughput=$(echo $best_line | cut -d',' -f6)
         
-        echo -e "${GREEN}🏆 OPTIMAL CONFIGURATION:${NC}"
+        echo -e "${GREEN}OPTIMAL CONFIGURATION:${NC}"
         echo -e "   Block Size: ${YELLOW}${best_bs}×${best_bs}${NC} (${best_bs}² = $((best_bs * best_bs)) threads/block)"
         echo -e "   Peak Performance: ${YELLOW}${best_throughput} M cells/s${NC}"
         echo -e "   Best Grid Size: ${YELLOW}${best_grid}×${best_grid}${NC}\n"
     fi
     
-    echo -e "${CYAN}📂 Generated Files:${NC}"
+    echo -e "${CYAN}Generated Files:${NC}"
     echo ""
     
     if [ -f "benchmarks/block_size_comparison.csv" ]; then
         size=$(du -h "benchmarks/block_size_comparison.csv" | cut -f1)
-        echo -e "   ${GREEN}✓${NC} 📊 Raw benchmark data"
+        echo -e "   ${GREEN}Raw benchmark data${NC}"
         echo -e "     ${BLUE}→${NC} benchmarks/block_size_comparison.csv ${YELLOW}($size)${NC}"
     fi
     
     echo ""
-    echo -e "${CYAN}📊 View results with:${NC}"
+    echo -e "${CYAN}View results with:${NC}"
     echo -e "   ${YELLOW}cat benchmarks/block_size_comparison.csv | column -t -s','${NC}"
     echo ""
 }
@@ -191,10 +206,10 @@ view_results() {
 # Final message
 final_message() {
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}                       ${GREEN}✓ BENCHMARK COMPLETE!${NC}                   ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                       ${GREEN}BENCHMARK COMPLETE!${NC}                   ${CYAN}║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}\n"
     
-    echo -e "${YELLOW}💡 Analysis Tips:${NC}\n"
+    echo -e "${YELLOW}Analysis Tips:${NC}\n"
     echo -e "  • Compare throughput (M cells/s) across different block sizes"
     echo -e "  • BS=16 typically optimal for warp alignment"
     echo -e "  • Consider shared memory usage for each configuration"
@@ -223,7 +238,6 @@ main() {
         fi
     fi
     
-    # Full pipeline
     check_prerequisites
     run_benchmarks
     show_results
@@ -231,8 +245,6 @@ main() {
     final_message
 }
 
-# Trap errors
 trap 'echo -e "\n${RED}Script interrupted!${NC}\n"; exit 1' INT TERM
 
-# Run main
 main "$@"
