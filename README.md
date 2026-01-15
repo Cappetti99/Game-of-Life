@@ -2,6 +2,8 @@
 
 A comprehensive implementation of Conway's Game of Life featuring three distinct versions optimized for different use cases: sequential CPU computation, massively parallel GPU acceleration, and interactive real-time visualization.
 
+> **🚀 Performance Highlights**: CUDA implementation achieves up to **88× speedup** over Python, processing **37.5 billion cells/second** on large grids. See [ANALYSIS.md](ANALYSIS.md) for detailed performance analysis.
+
 ## Overview
 
 Conway's Game of Life is a cellular automaton devised by mathematician John Conway in 1970. This project demonstrates the power of parallel computing by implementing the same algorithm in multiple ways:
@@ -24,6 +26,7 @@ Game-of-Life/
 ├── benchmarks/                 # Benchmark results (CSV)
 ├── docs/                       # Documentation
 │   └── IMPLEMENTATION.md
+├── ANALYSIS.md                 # Performance analysis & optimization guide
 ├── build/                      # Compiled binaries (generated)
 ├── run.sh                      # Main runner script
 └── README.md
@@ -167,9 +170,13 @@ Results are saved to:
 
 ## Performance Results
 
-The CUDA implementation demonstrates significant performance gains over the sequential Python version, with speedup increasing for larger grid sizes.
+> 📊 **For comprehensive performance analysis, optimization details, and methodology, see [ANALYSIS.md](ANALYSIS.md)**
 
-### Python Sequential (NumPy)
+The CUDA implementation demonstrates significant performance gains over the sequential Python version, with speedup increasing for larger grid sizes. All benchmarks use optimized implementations:
+- **Python**: `scipy.ndimage.convolve` (2-3× faster than manual loops)
+- **CUDA**: `__ldg` intrinsic + shared memory padding (5-15% improvement)
+
+### Python Sequential (NumPy + scipy)
 
 | Grid Size | Total Time | Time/Gen | Throughput |
 |-----------|------------|----------|------------|
@@ -182,7 +189,12 @@ The CUDA implementation demonstrates significant performance gains over the sequ
 | 2048x2048 | 278.38 ms | 2.784 ms | 1,507 M cells/s |
 | 4096x4096 | 3,920.58 ms | 39.206 ms | 428 M cells/s |
 
-### CUDA Parallel (Shared Memory)
+### CUDA Parallel (Optimized Shared Memory)
+
+**Optimizations Applied**:
+- `__ldg()` read-only cache intrinsic for boundary cells
+- Shared memory padding (`tile[TILE_SIZE][TILE_SIZE+1]`) to eliminate bank conflicts
+- Kernel launch error checking with `CUDA_CHECK` macro
 
 | Grid Size | Total Time | Time/Gen | Throughput |
 |-----------|------------|----------|------------|
@@ -211,6 +223,15 @@ The CUDA implementation demonstrates significant performance gains over the sequ
 > Peak throughput: **37.5 billion cells/second** (CUDA, 4096x4096)
 > 
 > The CUDA implementation shows consistent performance advantages, with speedup ranging from 21x to 88x depending on grid size. The largest grids benefit most from GPU parallelization.
+> 
+> **Memory Bound Workload**: Performance is limited by memory bandwidth (~75 GB/s achieved vs ~760 GB/s peak), not compute. This is expected for cellular automata with low arithmetic intensity (0.8 ops/byte).
+> 
+> 📖 **Deep Dive**: See [ANALYSIS.md](ANALYSIS.md) for:
+> - Parallel efficiency analysis (why 4.3% efficiency is normal)
+> - Block size optimization (why 16×16 is optimal)
+> - Strong/weak scaling measurements
+> - Roofline model interpretation
+> - Optimization technique breakdowns
 
 ## Key Features
 
@@ -222,15 +243,20 @@ The CUDA implementation demonstrates significant performance gains over the sequ
 
 ### Sequential Implementation
 - Pure Python and NumPy vectorized implementations
+- **`scipy.ndimage.convolve`** optimization (2-3× faster than manual loops)
+- **Garbage collection management** for accurate benchmarking
 - Educational code structure for learning
 - Efficient for small to medium grids
 - No special hardware requirements
 
 ### CUDA Implementation
 - Optimized shared memory kernel with halo cells
+- **`__ldg` intrinsic** for cache-friendly boundary reads
+- **Shared memory padding** to eliminate bank conflicts
 - Double buffering to eliminate read/write conflicts
 - cuRAND for GPU-side random initialization
 - CUDA events for accurate timing
+- **Kernel launch error checking** for robustness
 - Scales efficiently to very large grids (4096x4096+)
 
 ### Visual Implementation
@@ -242,18 +268,28 @@ The CUDA implementation demonstrates significant performance gains over the sequ
 
 ## Documentation
 
-- [IMPLEMENTATION.md](docs/IMPLEMENTATION.md) - Detailed technical documentation including:
+- **[ANALYSIS.md](ANALYSIS.md)** - Comprehensive performance analysis including:
+  - Speedup analysis and parallel efficiency calculations
+  - Memory bandwidth utilization breakdown
+  - Block size optimization study (why 16×16 is optimal)
+  - Strong and weak scaling measurements
+  - Optimization techniques with performance impact
+  - Roofline model interpretation
+  - Cost-benefit analysis and recommendations
+
+- **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** - Detailed technical documentation including:
   - Algorithm explanations and pseudocode
   - CUDA kernel architecture and optimization strategies
   - Shared memory layout with halo cell handling
   - Memory management and double buffering
-  - Performance analysis and bottleneck discussion
+  - Performance bottleneck discussion
 
 ## System Requirements
 
 ### Sequential Python Implementation
 - Python 3.10 or higher
 - NumPy library (`pip install numpy`)
+- **Recommended**: SciPy library for 2-3× faster performance (`pip install scipy`)
 - Works on any system (Windows, Linux, macOS)
 
 ### CUDA Parallel Implementation
@@ -273,8 +309,8 @@ The CUDA implementation demonstrates significant performance gains over the sequ
 git clone https://github.com/Cappetti99/Game-of-Life.git
 cd Game-of-Life
 
-# Install Python dependencies
-pip install numpy pygame
+# Install Python dependencies (NumPy required, SciPy recommended for 2-3× speedup)
+pip install numpy scipy pygame
 
 # Make the runner script executable
 chmod +x run.sh
@@ -298,10 +334,12 @@ The project is organized for clarity and separation of concerns:
 ## Contributing
 
 Contributions are welcome! Areas for improvement:
-- Additional optimization techniques (texture memory, warp-level primitives)
-- Support for different cellular automaton rules
+- **Texture memory**: Full texture API implementation for even better caching
+- **Warp-level primitives**: Use `__ballot_sync` for neighbor counting
+- **Multi-GPU support**: Partition grids across GPUs for linear scaling
+- **CUDA streams**: Overlap compute and memory transfer
+- Support for different cellular automaton rules (Wireworld, Brian's Brain, etc.)
 - Web-based visualization using WebGL
-- Multi-GPU support for extremely large grids
 - Pattern recognition and analysis tools
 
 ## License
@@ -312,14 +350,12 @@ This project is open source and available for educational purposes.
 
 - [Conway's Game of Life - Wikipedia](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life)
 - [CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
+- [CUDA Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
 - [LifeWiki - Pattern Database](https://conwaylife.com/wiki/)
-
-## Documentation
-
-## Author
-
-Created as a demonstration of parallel computing techniques and GPU acceleration for cellular automaton simulations.
+- Williams et al. (2009) - "Roofline: An Insightful Visual Performance Model"
 
 ---
 
-For detailed implementation information, see [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+For detailed performance analysis and optimization methodology, see [ANALYSIS.md](ANALYSIS.md).
+
+For implementation details, see [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).

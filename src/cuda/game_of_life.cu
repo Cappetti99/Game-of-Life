@@ -17,7 +17,7 @@
 #define DEFAULT_SEED 42
 
 #define TILE_SIZE (BLOCK_SIZE + 2)
-#define SHARED_MEM_SIZE (TILE_SIZE * TILE_SIZE)
+#define SHARED_MEM_SIZE (TILE_SIZE * (TILE_SIZE + 1))
 
 #define PRINT_CONFIG() \
     printf("=================================================\n"); \
@@ -25,7 +25,8 @@
     printf("  BLOCK_SIZE: %dx%d = %d threads/block\n", \
            BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE * BLOCK_SIZE); \
     printf("  TILE_SIZE: %dx%d (include halo)\n", TILE_SIZE, TILE_SIZE); \
-    printf("  Shared Memory: %d bytes/block\n", SHARED_MEM_SIZE); \
+    printf("  Shared Memory: %d bytes/block (padded +1)\n", SHARED_MEM_SIZE); \
+    printf("  Optimizations: __ldg cache + bank conflict padding\n"); \
     printf("=================================================\n\n");
 
 #define CUDA_CHECK(call) \
@@ -54,7 +55,7 @@ __global__ void initGridKernel(unsigned char* grid, int width, int height,
 __global__ void gameOfLifeKernel(const unsigned char* currentGrid,
                                   unsigned char* nextGrid,
                                   int width, int height) {
-    __shared__ unsigned char tile[TILE_SIZE][TILE_SIZE];
+    __shared__ unsigned char tile[TILE_SIZE][TILE_SIZE + 1];
     
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -62,45 +63,45 @@ __global__ void gameOfLifeKernel(const unsigned char* currentGrid,
     int ty = threadIdx.y + 1;
     
     if (x < width && y < height) {
-        tile[ty][tx] = currentGrid[y * width + x];
+        tile[ty][tx] = __ldg(&currentGrid[y * width + x]);
     }
     
     if (threadIdx.x == 0) {
         int nx = (x - 1 + width) % width;
-        if (y < height) tile[ty][0] = currentGrid[y * width + nx];
+        if (y < height) tile[ty][0] = __ldg(&currentGrid[y * width + nx]);
     }
     if (threadIdx.x == blockDim.x - 1 || x == width - 1) {
         int nx = (x + 1) % width;
-        if (y < height) tile[ty][tx + 1] = currentGrid[y * width + nx];
+        if (y < height) tile[ty][tx + 1] = __ldg(&currentGrid[y * width + nx]);
     }
     if (threadIdx.y == 0) {
         int ny = (y - 1 + height) % height;
-        if (x < width) tile[0][tx] = currentGrid[ny * width + x];
+        if (x < width) tile[0][tx] = __ldg(&currentGrid[ny * width + x]);
     }
     if (threadIdx.y == blockDim.y - 1 || y == height - 1) {
         int ny = (y + 1) % height;
-        if (x < width) tile[ty + 1][tx] = currentGrid[ny * width + x];
+        if (x < width) tile[ty + 1][tx] = __ldg(&currentGrid[ny * width + x]);
     }
     
     if (threadIdx.x == 0 && threadIdx.y == 0) {
         int nx = (x - 1 + width) % width;
         int ny = (y - 1 + height) % height;
-        tile[0][0] = currentGrid[ny * width + nx];
+        tile[0][0] = __ldg(&currentGrid[ny * width + nx]);
     }
     if (threadIdx.x == blockDim.x - 1 && threadIdx.y == 0) {
         int nx = (x + 1) % width;
         int ny = (y - 1 + height) % height;
-        tile[0][tx + 1] = currentGrid[ny * width + nx];
+        tile[0][tx + 1] = __ldg(&currentGrid[ny * width + nx]);
     }
     if (threadIdx.x == 0 && threadIdx.y == blockDim.y - 1) {
         int nx = (x - 1 + width) % width;
         int ny = (y + 1) % height;
-        tile[ty + 1][0] = currentGrid[ny * width + nx];
+        tile[ty + 1][0] = __ldg(&currentGrid[ny * width + nx]);
     }
     if (threadIdx.x == blockDim.x - 1 && threadIdx.y == blockDim.y - 1) {
         int nx = (x + 1) % width;
         int ny = (y + 1) % height;
-        tile[ty + 1][tx + 1] = currentGrid[ny * width + nx];
+        tile[ty + 1][tx + 1] = __ldg(&currentGrid[ny * width + nx]);
     }
     
     __syncthreads();
@@ -131,23 +132,20 @@ void analyzeOccupancy(int width, int height) {
     printf("Compute Capability: %d.%d\n", prop.major, prop.minor);
     printf("Max threads per SM: %d\n", prop.maxThreadsPerMultiProcessor);
     printf("Max blocks per SM: %d\n", prop.maxBlocksPerMultiProcessor);
-    printf("Shared memory per SM: %d KB\n", prop.sharedMemPerMultiprocessor / 1024);
+    printf("Shared memory per SM: %zu KB\n", prop.sharedMemPerMultiprocessor / 1024);
     printf("\n");
     
-    // Calcola grid configuration
-    dim3 blockDim(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 gridDim((width + BLOCK_SIZE - 1) / BLOCK_SIZE,
-                 (height + BLOCK_SIZE - 1) / BLOCK_SIZE);
-    
     int threadsPerBlock = BLOCK_SIZE * BLOCK_SIZE;
-    int totalBlocks = gridDim.x * gridDim.y;
+    int gridX = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int gridY = (height + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    int totalBlocks = gridX * gridY;
     int totalThreads = totalBlocks * threadsPerBlock;
     
     printf("Grid Configuration:\n");
     printf("  Block Dim: %dx%d = %d threads/block\n", 
            BLOCK_SIZE, BLOCK_SIZE, threadsPerBlock);
     printf("  Grid Dim: %dx%d = %d blocks\n", 
-           gridDim.x, gridDim.y, totalBlocks);
+           gridX, gridY, totalBlocks);
     printf("  Total threads: %d\n", totalThreads);
     printf("\n");
     
@@ -210,8 +208,10 @@ float runSimulation(int width, int height, int generations, unsigned long seed) 
     unsigned char *current = d_gridA, *next = d_gridB;
     for (int gen = 0; gen < generations; gen++) {
         gameOfLifeKernel<<<gridDim, blockDim>>>(current, next, width, height);
+        CUDA_CHECK(cudaGetLastError());
         unsigned char* temp = current; current = next; next = temp;
     }
+    CUDA_CHECK(cudaDeviceSynchronize());
     
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
@@ -232,6 +232,7 @@ void runBenchmarkWithAveraging(int width, int height, int generations,
     float* timings = (float*)malloc(measure_runs * sizeof(float));
     
     printf("Running benchmark: %d warmup + %d measurement runs\n", warmup_runs, measure_runs);
+    printf("Optimizations: __ldg cache intrinsic, shared memory padding (+1)\n");
     
     // Warmup runs
     for (int i = 0; i < warmup_runs; i++) {

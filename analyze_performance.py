@@ -1,35 +1,50 @@
 #!/usr/bin/env python3
 """
-Complete Performance Analysis & Visualization Suite
-Comprehensive analysis of CUDA block sizes, CUDA vs CPU speedup, scaling, and efficiency
-Merges functionality from visualize_block_sizes.py and analyze_performance.py
+Performance Analysis & Visualization Suite - Academic Style
+Publication-quality plots for Game of Life performance analysis
 """
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.gridspec import GridSpec
-from matplotlib.font_manager import FontProperties
 import matplotlib.cm as cm
 import numpy as np
 import sys
 from pathlib import Path
-import seaborn as sns
 
-plt.style.use('seaborn-v0_8-darkgrid')
-sns.set_palette("husl")
+# Academic/Publication style settings
+plt.rcParams.update({
+    'figure.facecolor': 'white',
+    'axes.facecolor': 'white',
+    'savefig.facecolor': 'white',
+    'font.family': 'serif',
+    'font.serif': ['Times New Roman', 'DejaVu Serif'],
+    'font.size': 10,
+    'axes.labelsize': 11,
+    'axes.titlesize': 12,
+    'xtick.labelsize': 9,
+    'ytick.labelsize': 9,
+    'legend.fontsize': 9,
+    'figure.titlesize': 14,
+    'lines.linewidth': 1.5,
+    'lines.markersize': 6,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+    'grid.linestyle': '--',
+    'axes.axisbelow': True,
+    'axes.edgecolor': 'black',
+    'axes.linewidth': 0.8,
+})
+
+# Professional color palette (colorblind-friendly)
 COLORS = {
-    'primary': '#2E86AB',    # Blu oceano
-    'secondary': '#A23B72',  # Magenta
-    'success': '#06A77D',    # Verde acqua
-    'warning': '#F18F01',    # Arancione
-    'danger': '#C73E1D',     # Rosso
-    'gradient': ['#667eea', '#764ba2', '#f093fb', '#4facfe']
+    'cuda': '#0173B2',      # Blue
+    'python': '#DE8F05',    # Orange
+    'optimal': '#029E73',   # Green
+    'baseline': '#CC78BC',  # Purple
+    'gray': '#949494',      # Gray
 }
-
-TITLE_FONT = {'family': 'sans-serif', 'weight': 'bold', 'size': 16}
-LABEL_FONT = {'family': 'sans-serif', 'weight': 'normal', 'size': 12}
-LEGEND_FONT = FontProperties(family='sans-serif', size=10)
 
 def load_data():
     """Load all benchmark data with support for both old and new CSV formats"""
@@ -192,132 +207,240 @@ def calculate_metrics(df_seq, df_cuda, df_block):
     
     return metrics
 
-def create_block_size_dashboard(df, df_seq=None):
-    """Dashboard for block size performance analysis"""
-    fig = plt.figure(figsize=(18, 12))
-    fig.patch.set_facecolor('white')
-    gs = GridSpec(3, 3, figure=fig, hspace=0.35, wspace=0.3)
+def create_academic_plots(df_seq, df_cuda, df_block, metrics, output_dir):
+    """Create individual publication-quality academic plots"""
+    saved_files = []
     
-    # Titolo principale
-    fig.suptitle('Game of Life: CUDA Block Size Performance Analysis', 
-                 fontsize=22, fontweight='bold', 
-                 color=COLORS['primary'], y=0.98)
+    # Plot 1: Speedup vs Grid Size (Log-Log)
+    fig1, ax1 = plt.subplots(figsize=(7, 5))
+    if 'common_sizes' in metrics and 'speedups' in metrics:
+        sizes = metrics['common_sizes']
+        speedups = metrics['speedups']
+        
+        ax1.plot(sizes, speedups, 'o-', color=COLORS['cuda'], 
+                linewidth=2, markersize=7, label='Measured Speedup')
+        
+        # Ideal linear scaling reference
+        ideal = np.array(sizes) / sizes[0]
+        ax1.plot(sizes, ideal, '--', color=COLORS['gray'], 
+                linewidth=1.5, alpha=0.6, label='Linear Scaling')
+        
+        ax1.set_xlabel('Grid Size (N×N)')
+        ax1.set_ylabel('Speedup (CUDA vs Python)')
+        ax1.set_title('Performance Speedup', fontweight='bold')
+        ax1.set_xscale('log', base=2)
+        ax1.set_yscale('log')
+        ax1.legend(frameon=True, fancybox=False, edgecolor='black')
+        ax1.grid(True, which='both', alpha=0.3)
+        
+        fig1.tight_layout()
+        output_path = output_dir / '1_speedup_analysis.png'
+        fig1.savefig(output_path, dpi=300, bbox_inches='tight')
+        saved_files.append(output_path)
+        plt.close(fig1)
+    
+    # Plot 2: Throughput Comparison
+    fig2, ax2 = plt.subplots(figsize=(7, 5))
+    if df_seq is not None and df_cuda is not None:
+        sizes = sorted(set(df_seq['grid_size'].unique()) & set(df_cuda['grid_size'].unique()))
+        
+        python_tp = [df_seq[df_seq['grid_size'] == s]['throughput_mcells_s'].values[0] for s in sizes]
+        cuda_tp = [df_cuda[df_cuda['grid_size'] == s]['throughput_mcells_s'].values[0] for s in sizes]
+        
+        ax2.plot(sizes, python_tp, 's-', color=COLORS['python'], 
+                linewidth=2, markersize=6, label='Python (NumPy)')
+        ax2.plot(sizes, cuda_tp, 'o-', color=COLORS['cuda'], 
+                linewidth=2, markersize=6, label='CUDA (GPU)')
+        
+        ax2.set_xlabel('Grid Size (N×N)')
+        ax2.set_ylabel('Throughput (M cells/s)')
+        ax2.set_title('Absolute Throughput', fontweight='bold')
+        ax2.set_yscale('log')
+        ax2.set_xscale('log', base=2)
+        ax2.legend(frameon=True, fancybox=False, edgecolor='black')
+        ax2.grid(True, which='both', alpha=0.3)
+        
+        fig2.tight_layout()
+        output_path = output_dir / '2_throughput_comparison.png'
+        fig2.savefig(output_path, dpi=300, bbox_inches='tight')
+        saved_files.append(output_path)
+        plt.close(fig2)
+    
+    # Plot 3: Block Size Optimization
+    fig3, ax3 = plt.subplots(figsize=(7, 5))
+    if df_block is not None:
+        # Average throughput across all grid sizes for each block size
+        avg_throughput = df_block.groupby('block_size')['throughput_mcells_s'].mean()
+        block_sizes = sorted(df_block['block_size'].unique())
+        
+        bars = ax3.bar(range(len(block_sizes)), 
+                      [avg_throughput[bs] for bs in block_sizes],
+                      color=COLORS['cuda'], alpha=0.7, edgecolor='black', linewidth=1)
+        
+        # Highlight optimal
+        optimal_idx = avg_throughput.idxmax()
+        optimal_pos = block_sizes.index(optimal_idx)
+        bars[optimal_pos].set_color(COLORS['optimal'])
+        bars[optimal_pos].set_alpha(0.9)
+        
+        ax3.set_xlabel('Block Size (threads/dim)')
+        ax3.set_ylabel('Avg. Throughput (M cells/s)')
+        ax3.set_title('Block Size Impact', fontweight='bold')
+        ax3.set_xticks(range(len(block_sizes)))
+        ax3.set_xticklabels([f'{bs}×{bs}' for bs in block_sizes])
+        ax3.grid(True, axis='y', alpha=0.3)
+        
+        # Add optimal marker
+        ax3.text(optimal_pos, avg_throughput[optimal_idx] * 1.02, 
+                'Optimal', ha='center', va='bottom', fontsize=8, fontweight='bold')
+        
+        fig3.tight_layout()
+        output_path = output_dir / '3_block_size_optimization.png'
+        fig3.savefig(output_path, dpi=300, bbox_inches='tight')
+        saved_files.append(output_path)
+        plt.close(fig3)
+    
+    # Plot 4: Parallel Efficiency
+    fig4, ax4 = plt.subplots(figsize=(7, 5))
+    if 'efficiencies' in metrics and 'common_sizes' in metrics:
+        sizes = metrics['common_sizes']
+        efficiencies = metrics['efficiencies']
+        
+        ax4.bar(range(len(sizes)), efficiencies, 
+               color=COLORS['cuda'], alpha=0.7, edgecolor='black', linewidth=1)
+        ax4.axhline(y=100, color='red', linestyle='--', linewidth=1.5, alpha=0.5, label='Ideal (100%)')
+        
+        ax4.set_xlabel('Grid Size (N×N)')
+        ax4.set_ylabel('Parallel Efficiency (%)')
+        ax4.set_title('GPU Utilization Efficiency', fontweight='bold')
+        ax4.set_xticks(range(len(sizes)))
+        ax4.set_xticklabels([f'{s}×{s}' for s in sizes], rotation=45, ha='right')
+        ax4.legend(frameon=True, fancybox=False, edgecolor='black')
+        ax4.grid(True, axis='y', alpha=0.3)
+        
+        fig4.tight_layout()
+        output_path = output_dir / '4_parallel_efficiency.png'
+        fig4.savefig(output_path, dpi=300, bbox_inches='tight')
+        saved_files.append(output_path)
+        plt.close(fig4)
+    
+    # Plot 5: Time per Generation (Scaling)
+    fig5, ax5 = plt.subplots(figsize=(8, 5))
+    if df_seq is not None and df_cuda is not None:
+        sizes = sorted(set(df_seq['grid_size'].unique()) & set(df_cuda['grid_size'].unique()))
+        
+        python_time = [df_seq[df_seq['grid_size'] == s]['time_per_gen_ms'].values[0] for s in sizes]
+        cuda_time = [df_cuda[df_cuda['grid_size'] == s]['time_per_gen_ms'].values[0] for s in sizes]
+        
+        width = 0.35
+        x = np.arange(len(sizes))
+        
+        ax5.bar(x - width/2, python_time, width, label='Python (CPU)',
+               color=COLORS['python'], alpha=0.8, edgecolor='black', linewidth=1)
+        ax5.bar(x + width/2, cuda_time, width, label='CUDA (GPU)',
+               color=COLORS['cuda'], alpha=0.8, edgecolor='black', linewidth=1)
+        
+        ax5.set_xlabel('Grid Size (N×N)')
+        ax5.set_ylabel('Time per Generation (ms)')
+        ax5.set_title('Execution Time Comparison', fontweight='bold')
+        ax5.set_xticks(x)
+        ax5.set_xticklabels([f'{s}×{s}' for s in sizes], rotation=45, ha='right')
+        ax5.set_yscale('log')
+        ax5.legend(frameon=True, fancybox=False, edgecolor='black')
+        ax5.grid(True, which='both', alpha=0.3, axis='y')
+        
+        fig5.tight_layout()
+        output_path = output_dir / '5_execution_time.png'
+        fig5.savefig(output_path, dpi=300, bbox_inches='tight')
+        saved_files.append(output_path)
+        plt.close(fig5)
+    
+    return saved_files
+
+def create_block_size_dashboard(df, df_seq, output_dir):
+    """Academic-style block size analysis - save individual plots"""
+    saved_files = []
     
     grid_sizes = sorted(df['grid_size'].unique())
     block_sizes = sorted(df['block_size'].unique())
     
-    # PANEL 1: Throughput Lines
-    ax1 = fig.add_subplot(gs[0, :2])
+    # Use colorblind-friendly palette
+    colors = plt.colormaps['tab10'](np.linspace(0, 0.9, len(grid_sizes)))
     
-    colors_gradient = cm.get_cmap('viridis')(np.linspace(0.2, 0.9, len(grid_sizes)))
-    
-    # Check if we have error data
-    has_error_bars = 'std_throughput_mcells_s' in df.columns
+    # Plot 1: Throughput vs Block Size
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
     
     for idx, grid in enumerate(grid_sizes):
-        data = df[df['grid_size'] == grid]
+        data = df[df['grid_size'] == grid].sort_values('block_size')
         
-        # Plot with error bars if available
-        if has_error_bars and not data['std_throughput_mcells_s'].isna().all():
-            ax1.errorbar(data['block_size'], data['throughput_mcells_s'],
-                        yerr=data['std_throughput_mcells_s'],
-                        marker='o', linewidth=3, markersize=10,
-                        label=f'{grid}×{grid} (CUDA)',
-                        color=colors_gradient[idx],
-                        markeredgecolor='white', markeredgewidth=2,
-                        capsize=5, capthick=2, elinewidth=2, alpha=0.9)
-        else:
-            ax1.plot(data['block_size'], data['throughput_mcells_s'], 
-                    marker='o', linewidth=3, markersize=10, 
-                    label=f'{grid}×{grid} (CUDA)', color=colors_gradient[idx],
-                    markeredgecolor='white', markeredgewidth=2)
+        ax1.plot(data['block_size'], data['throughput_mcells_s'], 
+                'o-', color=colors[idx], linewidth=2, markersize=6,
+                label=f'{grid}×{grid}', markeredgecolor='white', markeredgewidth=0.5)
         
-        # Evidenzia il massimo
+        # Mark maximum
         max_idx = data['throughput_mcells_s'].idxmax()
         max_point = data.loc[max_idx]
-        ax1.scatter(max_point['block_size'], max_point['throughput_mcells_s'],
-                   s=300, marker='*', color='gold', edgecolor='black', 
-                   linewidth=2, zorder=10)
+        ax1.plot(max_point['block_size'], max_point['throughput_mcells_s'],
+                '*', color=colors[idx], markersize=15, markeredgecolor='black',
+                markeredgewidth=1, zorder=10)
     
-    # Aggiungi linee sequenziali se disponibili
+    # Add Python baseline if available
     if df_seq is not None:
         for idx, grid in enumerate(grid_sizes):
             seq_data = df_seq[df_seq['grid_size'] == grid]
             if not seq_data.empty:
-                seq_throughput = seq_data['throughput_mcells_s'].values[0]
-                ax1.axhline(y=seq_throughput, color=colors_gradient[idx], 
-                           linestyle='--', linewidth=2, alpha=0.5,
-                           label=f'{grid}×{grid} (CPU)')
+                seq_tp = seq_data['throughput_mcells_s'].values[0]
+                ax1.axhline(y=seq_tp, color=colors[idx], linestyle=':', 
+                           linewidth=1.5, alpha=0.5)
     
-    ax1.set_xlabel('Block Size (threads per dimension)', **LABEL_FONT)
-    ax1.set_ylabel('Throughput (M cells/s)', **LABEL_FONT)
-    
-    # Add note about error bars if present
-    title_text = 'Performance Throughput (CUDA vs CPU)'
-    if has_error_bars:
-        title_text += ' [with ±1σ error bars]'
-    ax1.set_title(title_text, **TITLE_FONT, pad=15)
-    
-    ax1.legend(loc='upper left', framealpha=0.95, prop=LEGEND_FONT, ncol=2)
-    ax1.grid(True, alpha=0.3, linestyle='--')
+    ax1.set_xlabel('Block Size (threads per dimension)')
+    ax1.set_ylabel('Throughput (M cells/s)')
+    ax1.set_title('Throughput vs Block Size', fontweight='bold')
+    ax1.legend(frameon=True, fancybox=False, edgecolor='black', ncol=2)
+    ax1.grid(True, alpha=0.3)
     ax1.set_xticks(block_sizes)
     ax1.set_xticklabels([f'{bs}×{bs}' for bs in block_sizes])
-    ax1.axvspan(12, 20, alpha=0.1, color='green', label='Optimal Zone')
-    ax1.set_facecolor('#f8f9fa')
     
-    # PANEL 2: Winner Badge
-    ax2 = fig.add_subplot(gs[0, 2])
-    ax2.axis('off')
+    fig1.tight_layout()
+    output_path = output_dir / '6_throughput_vs_blocksize.png'
+    fig1.savefig(output_path, dpi=300, bbox_inches='tight')
+    saved_files.append(output_path)
+    plt.close(fig1)
     
-    best = df.loc[df['throughput_mcells_s'].idxmax()]
-    best_bs = int(best['block_size'])
-    
-    from matplotlib.patches import Circle
-    circle = Circle((0.5, 0.6), 0.35, color=COLORS['success'], alpha=0.2)
-    ax2.add_patch(circle)
-    
-    ax2.text(0.5, 0.85, 'WINNER', ha='center', va='center',
-            fontsize=18, fontweight='bold', color=COLORS['success'])
-    ax2.text(0.5, 0.6, f'{best_bs}×{best_bs}', ha='center', va='center',
-            fontsize=48, fontweight='bold', color=COLORS['primary'])
-    ax2.text(0.5, 0.35, f'{int(best_bs**2)} threads/block', ha='center', va='center',
-            fontsize=12, style='italic', color='gray')
-    ax2.text(0.5, 0.15, f'{best["throughput_mcells_s"]:.1f} M cells/s', 
-            ha='center', va='center', fontsize=14, fontweight='bold',
-            color=COLORS['success'])
-    ax2.set_xlim(0, 1)
-    ax2.set_ylim(0, 1)
-    
-    # PANEL 3: Heatmap
-    ax3 = fig.add_subplot(gs[1, :2])
+    # Plot 2: Heatmap
+    fig2, ax2 = plt.subplots(figsize=(8, 6))
     
     pivot = df.pivot(index='grid_size', columns='block_size', values='throughput_mcells_s')
     
-    im = ax3.imshow(pivot.values, cmap='RdYlGn', aspect='auto', 
-                    interpolation='nearest', vmin=pivot.values.min()*0.8)
+    im = ax2.imshow(pivot.values, cmap='YlOrRd', aspect='auto', interpolation='nearest')
     
-    ax3.set_xticks(np.arange(len(block_sizes)))
-    ax3.set_yticks(np.arange(len(grid_sizes)))
-    ax3.set_xticklabels([f'{bs}×{bs}' for bs in block_sizes])
-    ax3.set_yticklabels([f'{gs}×{gs}' for gs in grid_sizes])
-    ax3.set_xlabel('Block Size', **LABEL_FONT)
-    ax3.set_ylabel('Grid Size', **LABEL_FONT)
-    ax3.set_title('Performance Heatmap (M cells/s)', **TITLE_FONT, pad=15)
+    ax2.set_xticks(np.arange(len(block_sizes)))
+    ax2.set_yticks(np.arange(len(grid_sizes)))
+    ax2.set_xticklabels([f'{bs}×{bs}' for bs in block_sizes])
+    ax2.set_yticklabels([f'{gs}×{gs}' for gs in grid_sizes])
+    ax2.set_xlabel('Block Size')
+    ax2.set_ylabel('Grid Size')
+    ax2.set_title('Throughput Heatmap (M cells/s)', fontweight='bold')
     
-    # Aggiungi valori
+    # Add text annotations
     for i in range(len(grid_sizes)):
         for j in range(len(block_sizes)):
             value = pivot.values[i, j]
-            text_color = 'white' if value < pivot.values.max() * 0.6 else 'black'
-            text = ax3.text(j, i, f'{value:.0f}',
-                          ha="center", va="center", 
-                          color=text_color, fontsize=11, fontweight='bold')
+            text_color = 'white' if value > pivot.values.max() * 0.6 else 'black'
+            ax2.text(j, i, f'{value:.0f}', ha="center", va="center", 
+                    color=text_color, fontsize=9, fontweight='bold')
     
-    cbar = plt.colorbar(im, ax=ax3, fraction=0.046, pad=0.04)
-    cbar.set_label('Throughput', rotation=270, labelpad=20, **LABEL_FONT)
+    cbar = plt.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
+    cbar.set_label('Throughput', rotation=270, labelpad=15)
     
-    # PANEL 4: Speedup Comparison
-    ax4 = fig.add_subplot(gs[1, 2])
+    fig2.tight_layout()
+    output_path = output_dir / '7_throughput_heatmap.png'
+    fig2.savefig(output_path, dpi=300, bbox_inches='tight')
+    saved_files.append(output_path)
+    plt.close(fig2)
+    
+    # Plot 3: Speedup Relative to Baseline
+    fig3, ax3 = plt.subplots(figsize=(7, 6))
     
     speedup_data = []
     baseline_bs = min(block_sizes)
@@ -332,306 +455,34 @@ def create_block_size_dashboard(df, df_seq=None):
             speedups.append(baseline_time / current_time)
         speedup_data.append(np.mean(speedups))
     
-    bars = ax4.barh(range(len(block_sizes)), speedup_data, 
-                    color=[COLORS['danger'], COLORS['warning'], 
-                           COLORS['success'], COLORS['secondary']], 
-                    alpha=0.8, edgecolor='black', linewidth=1.5)
+    bars = ax3.barh(range(len(block_sizes)), speedup_data,
+                   color=COLORS['cuda'], alpha=0.7, edgecolor='black', linewidth=1)
     
+    # Highlight best
     max_idx = np.argmax(speedup_data)
-    bars[max_idx].set_color(COLORS['success'])
-    bars[max_idx].set_alpha(1.0)
-    bars[max_idx].set_edgecolor('gold')
-    bars[max_idx].set_linewidth(3)
+    bars[max_idx].set_color(COLORS['optimal'])
+    bars[max_idx].set_alpha(0.9)
     
-    ax4.set_yticks(range(len(block_sizes)))
-    ax4.set_yticklabels([f'{bs}×{bs}' for bs in block_sizes])
-    ax4.set_xlabel('Average Speedup', **LABEL_FONT)
-    ax4.set_title(f'Speedup vs BS={baseline_bs}', **TITLE_FONT, pad=15)
-    ax4.grid(True, alpha=0.3, axis='x', linestyle='--')
-    ax4.axvline(x=1, color='red', linestyle='--', linewidth=2, alpha=0.5)
+    ax3.set_yticks(range(len(block_sizes)))
+    ax3.set_yticklabels([f'{bs}×{bs}' for bs in block_sizes])
+    ax3.set_xlabel('Average Speedup')
+    ax3.set_title(f'Speedup vs BS={baseline_bs}', fontweight='bold')
+    ax3.grid(True, axis='x', alpha=0.3)
+    ax3.axvline(x=1, color='red', linestyle='--', linewidth=1.5, alpha=0.5)
     
-    for i, (bs, speedup) in enumerate(zip(block_sizes, speedup_data)):
-        ax4.text(speedup + 0.5, i, f'{speedup:.1f}×', 
-                va='center', fontweight='bold', fontsize=11)
+    # Add values
+    for i, speedup in enumerate(speedup_data):
+        ax3.text(speedup + 0.05, i, f'{speedup:.2f}×', 
+                va='center', fontsize=9, fontweight='bold')
     
-    ax4.set_facecolor('#f8f9fa')
+    fig3.tight_layout()
+    output_path = output_dir / '8_blocksize_speedup.png'
+    fig3.savefig(output_path, dpi=300, bbox_inches='tight')
+    saved_files.append(output_path)
+    plt.close(fig3)
     
-    # PANEL 5: Execution Time
-    ax5 = fig.add_subplot(gs[2, :2])
-    
-    width = 0.15
-    x = np.arange(len(grid_sizes))
-    
-    for idx, bs in enumerate(block_sizes):
-        data = [df[(df['grid_size'] == g) & (df['block_size'] == bs)]['time_per_gen_ms'].values[0] 
-                for g in grid_sizes]
-        offset = (idx - len(block_sizes)/2 + 0.5) * width
-        bars = ax5.bar(x + offset, data, width, 
-                      label=f'BS={bs}×{bs} (CUDA)',
-                      alpha=0.85, edgecolor='white', linewidth=1)
-    
-    if df_seq is not None:
-        seq_data = [df_seq[df_seq['grid_size'] == g]['time_per_gen_ms'].values[0] 
-                    if not df_seq[df_seq['grid_size'] == g].empty else np.nan
-                    for g in grid_sizes]
-        offset = (len(block_sizes) - len(block_sizes)/2 + 0.5) * width
-        ax5.bar(x + offset, seq_data, width, 
-               label='Sequential (CPU)',
-               alpha=0.85, edgecolor='black', linewidth=2,
-               color='red', hatch='//')
-    
-    ax5.set_xlabel('Grid Size', **LABEL_FONT)
-    ax5.set_ylabel('Time per Generation (ms, log scale)', **LABEL_FONT)
-    ax5.set_title('⏱️ Execution Time: CUDA vs CPU', **TITLE_FONT, pad=15)
-    ax5.set_xticks(x)
-    ax5.set_xticklabels([f'{gs}×{gs}' for gs in grid_sizes], rotation=45)
-    ax5.legend(loc='upper left', ncol=3, prop=LEGEND_FONT, framealpha=0.95, fontsize=8)
-    ax5.set_yscale('log')
-    ax5.grid(True, alpha=0.3, which='both', linestyle='--')
-    ax5.set_facecolor('#f8f9fa')
-    
-    # PANEL 6: Occupancy Theory
-    ax6 = fig.add_subplot(gs[2, 2])
-    
-    MAX_THREADS_PER_SM = 2048
-    occupancy_data = [(bs**2 / MAX_THREADS_PER_SM) * 
-                      min(MAX_THREADS_PER_SM // (bs**2), 32) * 100 
-                      for bs in block_sizes]
-    
-    colors_occ = [COLORS['danger'] if o < 50 else 
-                  COLORS['warning'] if o < 75 else 
-                  COLORS['success'] for o in occupancy_data]
-    
-    pie_result = ax6.pie(occupancy_data, 
-                        labels=[f'BS={bs}×{bs}' for bs in block_sizes],
-                        colors=colors_occ, autopct='%1.0f%%',
-                        startangle=90, pctdistance=0.85,
-                        explode=[0.05 if i == max_idx else 0 
-                                for i in range(len(block_sizes))],
-                        shadow=True)
-    
-    if len(pie_result) == 3:
-        wedges, texts, autotexts = pie_result
-    else:
-        wedges, texts = pie_result
-        autotexts = []
-    
-    for autotext in autotexts:
-        autotext.set_color('white')
-        autotext.set_fontsize(11)
-        autotext.set_fontweight('bold')
-    
-    ax6.set_title('Theoretical Occupancy', **TITLE_FONT, pad=15)
-    
-    # Footer
-    footer_text = (f"Generated from: {len(df)} benchmark runs | "
-                  f"Grid sizes: {min(grid_sizes)}–{max(grid_sizes)} | "
-                  f"Block sizes: {min(block_sizes)}–{max(block_sizes)} | "
-                  f"Best: {best_bs}×{best_bs} threads/block")
-    fig.text(0.5, 0.02, footer_text, ha='center', fontsize=9, 
-            style='italic', color='gray')
-    
-    return fig
+    return saved_files
 
-def create_speedup_dashboard(df_seq, df_cuda, df_block, metrics):
-    """Comprehensive speedup analysis dashboard"""
-    fig = plt.figure(figsize=(18, 12))
-    fig.patch.set_facecolor('white')
-    gs = GridSpec(3, 3, figure=fig, hspace=0.35, wspace=0.3)
-    
-    fig.suptitle('Performance Analysis: Speedup, Scaling & Efficiency', 
-                 fontsize=22, fontweight='bold', 
-                 color=COLORS['primary'], y=0.98)
-    
-    # PANEL 1: CUDA vs Python Speedup
-    ax1 = fig.add_subplot(gs[0, :2])
-    
-    if 'common_sizes' in metrics and 'speedups' in metrics:
-        sizes = metrics['common_sizes']
-        speedups = metrics['speedups']
-        
-        ax1.plot(sizes, speedups, marker='o', linewidth=3, markersize=12,
-                color=COLORS['success'], markeredgecolor='white', 
-                markeredgewidth=2, label='CUDA Speedup vs Python')
-        
-        ideal_speedup = [s / sizes[0] for s in sizes]
-        ax1.plot(sizes, ideal_speedup, linestyle='--', linewidth=2, 
-                color='gray', alpha=0.5, label='Ideal Linear Scaling')
-        
-        if metrics.get('breakeven_size'):
-            breakeven_size = metrics['breakeven_size']
-            ax1.axvline(x=breakeven_size, color=COLORS['warning'], 
-                       linestyle='--', linewidth=2, alpha=0.7)
-            ax1.text(breakeven_size, max(speedups) * 0.9, 
-                    f'Break-even\n{breakeven_size}×{breakeven_size}',
-                    ha='center', fontsize=10, fontweight='bold',
-                    bbox=dict(boxstyle='round', facecolor=COLORS['warning'], alpha=0.3))
-        
-        for size, speedup in zip(sizes, speedups):
-            ax1.text(size, speedup, f'{speedup:.1f}×', 
-                    ha='center', va='bottom', fontsize=9, fontweight='bold')
-        
-        ax1.set_xlabel('Grid Size (N×N)', **LABEL_FONT)
-        ax1.set_ylabel('Speedup Factor (×)', **LABEL_FONT)
-        ax1.set_title('CUDA Speedup vs Python Sequential', **TITLE_FONT, pad=15)
-        ax1.legend(loc='upper left', prop=LEGEND_FONT, framealpha=0.95)
-        ax1.grid(True, alpha=0.3, linestyle='--')
-        ax1.set_xscale('log', base=2)
-        ax1.set_facecolor('#f8f9fa')
-        ax1.axhline(y=1, color='red', linestyle='--', linewidth=2, alpha=0.5)
-    
-    # PANEL 2: Best Config Badge
-    ax2 = fig.add_subplot(gs[0, 2])
-    ax2.axis('off')
-    
-    if df_block is not None:
-        best = df_block.loc[df_block['throughput_mcells_s'].idxmax()]
-        avg_throughput = df_block.groupby('block_size')['throughput_mcells_s'].mean()
-        best_avg_bs = avg_throughput.idxmax()
-        
-        ax2.text(0.5, 0.9, 'BEST CONFIG', ha='center', va='center',
-                fontsize=14, fontweight='bold', color=COLORS['success'])
-        ax2.text(0.5, 0.7, f"BS={int(best['block_size'])}×{int(best['block_size'])}", 
-                ha='center', va='center', fontsize=32, fontweight='bold', 
-                color=COLORS['primary'])
-        ax2.text(0.5, 0.5, f"{best['throughput_mcells_s']:.1f} M cells/s", 
-                ha='center', va='center', fontsize=14, color=COLORS['success'])
-        ax2.text(0.5, 0.3, f"Grid: {int(best['grid_size'])}×{int(best['grid_size'])}", 
-                ha='center', va='center', fontsize=12, style='italic', color='gray')
-        ax2.text(0.5, 0.1, f"Avg Best BS: {int(best_avg_bs)}×{int(best_avg_bs)}", 
-                ha='center', va='center', fontsize=11, fontweight='bold')
-        ax2.set_xlim(0, 1)
-        ax2.set_ylim(0, 1)
-    
-    # PANEL 3: Python vs CUDA Best vs CUDA Worst
-    ax3 = fig.add_subplot(gs[1, :])
-    
-    if df_seq is not None and df_block is not None:
-        sizes = sorted(set(df_seq['grid_size'].unique()) & set(df_block['grid_size'].unique()))
-        
-        best_bs = 16
-        worst_bs = 1
-        
-        python_throughput = [df_seq[df_seq['grid_size'] == s]['throughput_mcells_s'].values[0] 
-                            for s in sizes]
-        cuda_best = [df_block[(df_block['grid_size'] == s) & 
-                             (df_block['block_size'] == best_bs)]['throughput_mcells_s'].values[0]
-                    if len(df_block[(df_block['grid_size'] == s) & 
-                                   (df_block['block_size'] == best_bs)]) > 0 else 0
-                    for s in sizes]
-        cuda_worst = [df_block[(df_block['grid_size'] == s) & 
-                              (df_block['block_size'] == worst_bs)]['throughput_mcells_s'].values[0]
-                     if len(df_block[(df_block['grid_size'] == s) & 
-                                    (df_block['block_size'] == worst_bs)]) > 0 else 0
-                     for s in sizes]
-        
-        x = np.arange(len(sizes))
-        width = 0.25
-        
-        ax3.bar(x - width, python_throughput, width, 
-               label='Python Sequential (CPU)', 
-               color=COLORS['danger'], alpha=0.8, edgecolor='black', linewidth=2)
-        ax3.bar(x, cuda_best, width, 
-               label=f'CUDA Best (BS={best_bs}×{best_bs})', 
-               color=COLORS['success'], alpha=0.8, edgecolor='black', linewidth=2)
-        ax3.bar(x + width, cuda_worst, width, 
-               label=f'CUDA Worst (BS={worst_bs}×{worst_bs})', 
-               color=COLORS['warning'], alpha=0.8, edgecolor='black', linewidth=2, hatch='//')
-        
-        ax3.set_xlabel('Grid Size (N×N)', **LABEL_FONT)
-        ax3.set_ylabel('Throughput (M cells/s)', **LABEL_FONT)
-        ax3.set_title('Throughput: Python vs CUDA (Best vs Worst)', **TITLE_FONT, pad=15)
-        ax3.set_xticks(x)
-        ax3.set_xticklabels([f'{s}×{s}' for s in sizes], rotation=45)
-        ax3.legend(prop=LEGEND_FONT, framealpha=0.95, loc='upper left')
-        ax3.grid(True, alpha=0.3, linestyle='--', axis='y')
-        ax3.set_facecolor('#f8f9fa')
-        ax3.set_yscale('log')
-    
-    # PANEL 4: Strong Scaling
-    ax4 = fig.add_subplot(gs[2, 0])
-    
-    if 'strong_scaling' in metrics:
-        data = metrics['strong_scaling']
-        
-        ax4.plot(data['block_size'], data['speedup'], marker='o', linewidth=3,
-                markersize=10, color=COLORS['primary'], label='Actual Speedup',
-                markeredgecolor='white', markeredgewidth=2)
-        ax4.plot(data['block_size'], data['ideal_speedup'], linestyle='--', 
-                linewidth=2, color='gray', alpha=0.5, label='Ideal Speedup')
-        
-        ax4.set_xlabel('Block Size (threads/dim)', **LABEL_FONT)
-        ax4.set_ylabel('Speedup vs BS=1', **LABEL_FONT)
-        ax4.set_title('Strong Scaling', **TITLE_FONT, pad=15)
-        ax4.legend(prop=LEGEND_FONT, framealpha=0.95)
-        ax4.grid(True, alpha=0.3, linestyle='--')
-        ax4.set_facecolor('#f8f9fa')
-        ax4.set_yscale('log')
-        ax4.set_xscale('log', base=2)
-    
-    # PANEL 5: Parallel Efficiency
-    ax5 = fig.add_subplot(gs[2, 1])
-    
-    if 'efficiencies' in metrics:
-        sizes = metrics['common_sizes']
-        efficiencies = metrics['efficiencies']
-        
-        colors = [COLORS['success'] if e > 2 else 
-                 COLORS['warning'] if e > 1 else 
-                 COLORS['danger'] for e in efficiencies]
-        
-        bars = ax5.bar(range(len(sizes)), efficiencies, color=colors, 
-                      alpha=0.8, edgecolor='black', linewidth=2)
-        
-        for i, (bar, eff) in enumerate(zip(bars, efficiencies)):
-            height = bar.get_height()
-            ax5.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{eff:.1f}%',
-                    ha='center', va='bottom', fontweight='bold', fontsize=9)
-        
-        ax5.set_xlabel('Grid Size (N×N)', **LABEL_FONT)
-        ax5.set_ylabel('Parallel Efficiency (%)', **LABEL_FONT)
-        ax5.set_title('GPU Utilization Efficiency', **TITLE_FONT, pad=15)
-        ax5.set_xticks(range(len(sizes)))
-        ax5.set_xticklabels([f'{s}×{s}' for s in sizes], rotation=45)
-        ax5.grid(True, alpha=0.3, linestyle='--', axis='y')
-        ax5.set_facecolor('#f8f9fa')
-        ax5.axhline(y=100, color='red', linestyle='--', linewidth=2, alpha=0.5)
-    
-    # PANEL 6: Weak Scaling
-    ax6 = fig.add_subplot(gs[2, 2])
-    
-    if 'weak_scaling' in metrics:
-        colors_gradient = cm.get_cmap('viridis')(np.linspace(0.2, 0.9, len(metrics['weak_scaling'])))
-        
-        for idx, item in enumerate(metrics['weak_scaling']):
-            bs = item['block_size']
-            data = item['data']
-            ax6.plot(data['grid_size'], data['time_per_gen_ms'], 
-                    marker='o', linewidth=2, markersize=8,
-                    label=f'BS={bs}×{bs}', color=colors_gradient[idx],
-                    markeredgecolor='white', markeredgewidth=1.5)
-        
-        ax6.set_xlabel('Grid Size (N×N)', **LABEL_FONT)
-        ax6.set_ylabel('Time per Generation (ms)', **LABEL_FONT)
-        ax6.set_title('Weak Scaling', **TITLE_FONT, pad=15)
-        ax6.legend(prop=LEGEND_FONT, framealpha=0.95, fontsize=8)
-        ax6.grid(True, alpha=0.3, linestyle='--')
-        ax6.set_facecolor('#f8f9fa')
-        ax6.set_yscale('log')
-        ax6.set_xscale('log', base=2)
-    
-    # Footer
-    if 'speedups' in metrics and len(metrics['speedups']) > 0:
-        avg_speedup = np.mean(metrics['speedups'])
-        max_speedup = np.max(metrics['speedups'])
-        footer = (f"Avg Speedup: {avg_speedup:.1f}× | "
-                 f"Max Speedup: {max_speedup:.1f}× | "
-                 f"Break-even: {metrics.get('breakeven_size', 'N/A')}×{metrics.get('breakeven_size', 'N/A')}")
-        fig.text(0.5, 0.02, footer, ha='center', fontsize=10, 
-                fontweight='bold', color=COLORS['primary'])
-    
-    return fig
 
 def print_summary(data, metrics):
     """Print comprehensive terminal summary"""
@@ -686,70 +537,77 @@ def print_summary(data, metrics):
 
 def main():
     """Main analysis function"""
-    print("\033[0;36m")
-    print("╔════════════════════════════════════════════════════════════╗")
-    print("║                                                            ║")
-    print("║      Game of Life - Performance Analysis                   ║")
-    print("║                                                            ║")
-    print("║   Block Sizes | Speedup | Scaling | Comprehensive Stats   ║")
-    print("║                                                            ║")
-    print("╚════════════════════════════════════════════════════════════╝")
-    print("\033[0m")
+    print("\n" + "="*70)
+    print("  Game of Life - Academic Performance Analysis")
+    print("  Publication-Quality Plots")
+    print("="*70)
     
     print("\nLoading benchmark data...")
     data = load_data()
     
     if not data:
-        print("\n\033[0;31mError: No benchmark data found!\033[0m")
-        print("\nPlease run benchmarks first:")
-        print("  ./run.sh benchmark")
+        print("\nError: No benchmark data found!")
+        print("Please run benchmarks first: ./run.sh benchmark")
         sys.exit(1)
     
-    print("\nCalculating performance metrics...")
+    print("Calculating performance metrics...")
     metrics = calculate_metrics(
         data.get('sequential'),
         data.get('cuda'),
         data.get('block_sizes')
     )
     
-    print("\nGenerating analysis visualizations...\n")
+    print("\nGenerating academic-style visualizations...\n")
+    print("  Each plot saved as individual PNG file (300 DPI)\n")
     
     output_dir = Path('benchmarks')
     output_dir.mkdir(exist_ok=True)
     
-    # Create block size dashboard if data available
-    if 'block_sizes' in data:
-        print("  Creating block size dashboard...")
-        fig1 = create_block_size_dashboard(data['block_sizes'], data.get('sequential'))
-        output_path = output_dir / 'block_size_dashboard.png'
-        fig1.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
-        print(f"    Saved: {output_path}")
+    all_saved_files = []
     
-    # Create speedup dashboard if data available
+    # Create main academic plots
     if data.get('sequential') is not None and data.get('cuda') is not None:
-        print("  Creating speedup analysis dashboard...")
-        fig2 = create_speedup_dashboard(
+        print("  Creating performance analysis plots...")
+        saved_files = create_academic_plots(
             data.get('sequential'),
             data.get('cuda'),
             data.get('block_sizes'),
-            metrics
+            metrics,
+            output_dir
         )
-        output_path = output_dir / 'performance_analysis_dashboard.png'
-        fig2.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
-        print(f"    Saved: {output_path}")
+        all_saved_files.extend(saved_files)
+        for path in saved_files:
+            print(f"    ✓ {path.name}")
+    
+    # Create block size analysis
+    if 'block_sizes' in data:
+        print("\n  Creating block size analysis plots...")
+        saved_files = create_block_size_dashboard(
+            data['block_sizes'],
+            data.get('sequential'),
+            output_dir
+        )
+        all_saved_files.extend(saved_files)
+        for path in saved_files:
+            print(f"    ✓ {path.name}")
     
     # Print terminal summary
+    print()
     print_summary(data, metrics)
     
+    print("\n" + "="*70)
     print("Analysis complete!")
-    print("\nOutput files:")
-    if 'block_sizes' in data:
-        print("   - block_size_dashboard.png           (Block size analysis)")
-    if data.get('sequential') is not None and data.get('cuda') is not None:
-        print("   - performance_analysis_dashboard.png (Speedup, scaling, efficiency)")
+    print(f"\n{len(all_saved_files)} individual plots generated:")
+    for path in all_saved_files:
+        print(f"   📊 {path.name}")
     
-    print("\nShowing interactive plots...")
-    plt.show()
+    print("\nPlot details:")
+    print("   • Resolution: 300 DPI")
+    print("   • Format: PNG")
+    print("   • Style: Academic publication quality")
+    print("   • Fonts: Serif (Times New Roman)")
+    print("   • Colors: Colorblind-friendly palette")
+    print("="*70)
 
 if __name__ == "__main__":
     main()
