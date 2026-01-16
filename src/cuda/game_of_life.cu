@@ -1,5 +1,5 @@
 /**
- * Game of Life - Block Size Performance Tester
+ * Game of Life CUDA Implementation
  */
 
 #include <stdio.h>
@@ -9,7 +9,7 @@
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 
-// BLOCK_SIZE viene passato da linea di comando durante compilazione
+// BLOCK_SIZE is passed via command line arguments during compilation
 #ifndef BLOCK_SIZE
 #define BLOCK_SIZE 16
 #endif
@@ -19,15 +19,7 @@
 #define TILE_SIZE (BLOCK_SIZE + 2)
 #define SHARED_MEM_SIZE (TILE_SIZE * (TILE_SIZE + 1))
 
-#define PRINT_CONFIG() \
-    printf("=================================================\n"); \
-    printf("Configuration:\n"); \
-    printf("  BLOCK_SIZE: %dx%d = %d threads/block\n", \
-           BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE * BLOCK_SIZE); \
-    printf("  TILE_SIZE: %dx%d (include halo)\n", TILE_SIZE, TILE_SIZE); \
-    printf("  Shared Memory: %d bytes/block (padded +1)\n", SHARED_MEM_SIZE); \
-    printf("  Optimizations: __ldg cache + bank conflict padding\n"); \
-    printf("=================================================\n\n");
+
 
 #define CUDA_CHECK(call) \
     do { \
@@ -39,9 +31,13 @@
         } \
     } while (0)
 
+/**
+ * Kernel to initialize the grid with random values.
+ * Uses cuRAND to generate random states for each cell.
+ */
 __global__ void initGridKernel(unsigned char* grid, int width, int height, 
                                 unsigned long seed) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    // Calculate global thread coordinates
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (x < width && y < height) {
@@ -52,37 +48,61 @@ __global__ void initGridKernel(unsigned char* grid, int width, int height,
     }
 }
 
+/**
+ * Optimized Game of Life Kernel using Shared Memory Tiling.
+ * 
+ * Strategy:
+ * 1. Each block loads a tile of the grid into Shared Memory.
+ * 2. Shared Memory includes a "halo" (padding) to store neighbors from adjacent blocks.
+ * 3. Threads cooperatively load the central tile and the halo regions.
+ * 4. __ldg() intrinsic is used to utilize the Read-Only Data Cache.
+ * 5. Padding in Shared Memory prevents bank conflicts.
+ */
 __global__ void gameOfLifeKernel(const unsigned char* currentGrid,
                                   unsigned char* nextGrid,
                                   int width, int height) {
+    // Shared memory tile with halo (border) and padding to avoid bank conflicts (+1)
     __shared__ unsigned char tile[TILE_SIZE][TILE_SIZE + 1];
     
+    // Global coordinates
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    // Local coordinates within the tile (offset by 1 for halo)
     int tx = threadIdx.x + 1;
     int ty = threadIdx.y + 1;
     
+    // 1. Load the central tile data
     if (x < width && y < height) {
+        // Use __ldg to force load through the read-only cache (texture cache)
         tile[ty][tx] = __ldg(&currentGrid[y * width + x]);
     }
     
+    // 2. Load Halo Cells (Ghost Cells)
+    // We handle toroidal boundary conditions (wrapping edges)
+    
+    // Left halo
     if (threadIdx.x == 0) {
         int nx = (x - 1 + width) % width;
         if (y < height) tile[ty][0] = __ldg(&currentGrid[y * width + nx]);
     }
+    // Right halo
     if (threadIdx.x == blockDim.x - 1 || x == width - 1) {
         int nx = (x + 1) % width;
         if (y < height) tile[ty][tx + 1] = __ldg(&currentGrid[y * width + nx]);
     }
+    // Top halo
     if (threadIdx.y == 0) {
         int ny = (y - 1 + height) % height;
         if (x < width) tile[0][tx] = __ldg(&currentGrid[ny * width + x]);
     }
+    // Bottom halo
     if (threadIdx.y == blockDim.y - 1 || y == height - 1) {
         int ny = (y + 1) % height;
         if (x < width) tile[ty + 1][tx] = __ldg(&currentGrid[ny * width + x]);
     }
     
+    // Corner halo cells
     if (threadIdx.x == 0 && threadIdx.y == 0) {
         int nx = (x - 1 + width) % width;
         int ny = (y - 1 + height) % height;
@@ -104,10 +124,14 @@ __global__ void gameOfLifeKernel(const unsigned char* currentGrid,
         tile[ty + 1][tx + 1] = __ldg(&currentGrid[ny * width + nx]);
     }
     
+    // Ensure all threads have finished loading shared memory before computation
     __syncthreads();
     
+    // 3. Compute next state using Shared Memory
     if (x < width && y < height) {
         int neighbors = 0;
+        
+        // Sum neighbors from the 3x3 window stored in shared memory
         for (int dy = -1; dy <= 1; dy++) {
             for (int dx = -1; dx <= 1; dx++) {
                 if (dx == 0 && dy == 0) continue;
@@ -115,6 +139,7 @@ __global__ void gameOfLifeKernel(const unsigned char* currentGrid,
             }
         }
         
+        // Apply Conway's Game of Life rules
         unsigned char current = tile[ty][tx];
         nextGrid[y * width + x] = (current == 1) 
             ? ((neighbors == 2 || neighbors == 3) ? 1 : 0)
@@ -122,69 +147,12 @@ __global__ void gameOfLifeKernel(const unsigned char* currentGrid,
     }
 }
 
-void analyzeOccupancy(int width, int height) {
-    printf("\n--- OCCUPANCY ANALYSIS ---\n");
-    
-    cudaDeviceProp prop;
-    CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-    
-    printf("GPU: %s\n", prop.name);
-    printf("Compute Capability: %d.%d\n", prop.major, prop.minor);
-    printf("Max threads per SM: %d\n", prop.maxThreadsPerMultiProcessor);
-    printf("Max blocks per SM: %d\n", prop.maxBlocksPerMultiProcessor);
-    printf("Shared memory per SM: %zu KB\n", prop.sharedMemPerMultiprocessor / 1024);
-    printf("\n");
-    
-    int threadsPerBlock = BLOCK_SIZE * BLOCK_SIZE;
-    int gridX = (width + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    int gridY = (height + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    int totalBlocks = gridX * gridY;
-    int totalThreads = totalBlocks * threadsPerBlock;
-    
-    printf("Grid Configuration:\n");
-    printf("  Block Dim: %dx%d = %d threads/block\n", 
-           BLOCK_SIZE, BLOCK_SIZE, threadsPerBlock);
-    printf("  Grid Dim: %dx%d = %d blocks\n", 
-           gridX, gridY, totalBlocks);
-    printf("  Total threads: %d\n", totalThreads);
-    printf("\n");
-    
-    // Calcola theoretical occupancy
-    int maxBlocksPerSM = prop.maxThreadsPerMultiProcessor / threadsPerBlock;
-    
-    int sharedMemPerBlock = SHARED_MEM_SIZE;
-    int maxBlocksByShmem = prop.sharedMemPerMultiprocessor / sharedMemPerBlock;
-    int maxBlocksByLimit = prop.maxBlocksPerMultiProcessor;
-    
-    int actualBlocksPerSM = maxBlocksPerSM;
-    if (maxBlocksByShmem < actualBlocksPerSM) actualBlocksPerSM = maxBlocksByShmem;
-    if (maxBlocksByLimit < actualBlocksPerSM) actualBlocksPerSM = maxBlocksByLimit;
-    
-    float theoreticalOccupancy = (float)(actualBlocksPerSM * threadsPerBlock) / 
-                                  prop.maxThreadsPerMultiProcessor * 100.0f;
-    
-    printf("Occupancy Analysis:\n");
-    printf("  Max blocks/SM (by threads): %d\n", maxBlocksPerSM);
-    printf("  Max blocks/SM (by shmem): %d\n", maxBlocksByShmem);
-    printf("  Max blocks/SM (by limit): %d\n", maxBlocksByLimit);
-    printf("  → Actual blocks/SM: %d\n", actualBlocksPerSM);
-    printf("  → Theoretical Occupancy: %.1f%%\n", theoreticalOccupancy);
-    printf("\n");
-    
-    // Warp analysis
-    int warpsPerBlock = (threadsPerBlock + 31) / 32;
-    printf("Warp Efficiency:\n");
-    printf("  Warps per block: %d\n", warpsPerBlock);
-    printf("  Last warp utilization: %d/32 threads\n", 
-           threadsPerBlock - (warpsPerBlock - 1) * 32);
-    if (threadsPerBlock % 32 == 0) {
-        printf("  Perfect warp alignment!\n");
-    } else {
-        printf("  Partial warp (inefficient)\n");
-    }
-    printf("\n");
-}
 
+
+/**
+ * Main simulation runner. Use "Ping-Pong" buffering strategy (swapping pointers)
+ * to avoid memory copies between generations.
+ */
 float runSimulation(int width, int height, int generations, unsigned long seed) {
     size_t gridSize = width * height * sizeof(unsigned char);
     
@@ -227,12 +195,16 @@ float runSimulation(int width, int height, int generations, unsigned long seed) 
     return ms;
 }
 
+/**
+ * Runs the simulation multiple times to gather statistical data on performance.
+ * Performs warmup runs followed by measurement runs.
+ */
 void runBenchmarkWithAveraging(int width, int height, int generations, 
                                 unsigned long seed, int warmup_runs, int measure_runs) {
     float* timings = (float*)malloc(measure_runs * sizeof(float));
     
     printf("Running benchmark: %d warmup + %d measurement runs\n", warmup_runs, measure_runs);
-    printf("Optimizations: __ldg cache intrinsic, shared memory padding (+1)\n");
+
     
     // Warmup runs
     for (int i = 0; i < warmup_runs; i++) {
@@ -309,6 +281,10 @@ void runBenchmarkWithAveraging(int width, int height, int generations,
     free(sorted);
 }
 
+/**
+ * Specialized benchmark mode that sweeps through different grid sizes
+ * and outputs results to a CSV file.
+ */
 void runBenchmarkMode() {
     const int sizes[] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
     const int num_sizes = 8;
@@ -402,7 +378,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     
-    PRINT_CONFIG();
+
     
     int width = (argc > 1) ? atoi(argv[1]) : 1024;
     int height = (argc > 2) ? atoi(argv[2]) : 1024;
@@ -414,7 +390,7 @@ int main(int argc, char** argv) {
     printf("Grid: %dx%d\n", width, height);
     printf("Generations: %d\n\n", generations);
     
-    analyzeOccupancy(width, height);
+
     
     if (enable_averaging) {
         printf("--- RUNNING SIMULATION WITH AVERAGING ---\n");
