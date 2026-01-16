@@ -1,20 +1,20 @@
-# Conway's Game of Life - Multi-Implementation Project
+# Conway's Game of Life — Multi-Implementation
 
-A comprehensive implementation of Conway's Game of Life featuring three distinct versions optimized for different use cases: sequential CPU computation, massively parallel GPU acceleration, and interactive real-time visualization.
+Conway's Game of Life implemented in three variants: **sequential CPU**, **GPU (CUDA)**, and **interactive visualization**.
 
-> **🚀 Performance Highlights**: CUDA implementation achieves up to **88× speedup** over Python, processing **37.5 billion cells/second** on large grids. See [ANALYSIS.md](ANALYSIS.md) for detailed performance analysis.
+> **Performance**: CUDA reaches up to **83×** vs Python, peaking at **38.96B cells/s** on **4096×4096** grids.
 
 ## Overview
 
-Conway's Game of Life is a cellular automaton devised by mathematician John Conway in 1970. This project demonstrates the power of parallel computing by implementing the same algorithm in multiple ways:
+This repo showcases the same algorithm implemented with different trade-offs:
 
-- **Sequential** (Python/NumPy) - Educational implementation for learning and prototyping
-- **Parallel** (CUDA) - High-performance GPU computation achieving up to 88x speedup
-- **Visual** (Pygame) - Interactive real-time visualization with drawing capabilities
+- **Sequential (Python/NumPy)** — optimized, vectorized baseline (optional SciPy acceleration)
+- **Parallel (CUDA)** — high-throughput GPU kernel with memory optimizations
+- **Visual (Pygame)** — interactive, real-time simulation + pattern drawing
 
 ## Project Structure
 
-```
+```text
 Game-of-Life/
 ├── src/
 │   ├── python/                 # Sequential Python implementation
@@ -24,338 +24,173 @@ Game-of-Life/
 │   └── visual/                 # Interactive Pygame visualization
 │       └── game_of_life_visual.py
 ├── benchmarks/                 # Benchmark results (CSV)
-├── docs/                       # Documentation
-│   └── IMPLEMENTATION.md
-├── ANALYSIS.md                 # Performance analysis & optimization guide
-├── build/                      # Compiled binaries (generated)
-├── run.sh                      # Main runner script
+│   ├── benchmark_sequential.csv
+│   ├── benchmark_cuda.csv
+│   └── block_size_comparison.csv
+├── docs/
+│   └── Report_Game_of_Life.pdf
+├── build/                      # Generated binaries
+├── run.sh                      # Main runner
+├── benchmark_block_sizes.sh    # Block-size sweep
 └── README.md
 ```
 
 ## Quick Start
 
 ```bash
-# Show all options
 ./run.sh help
-
-# Run visual version (interactive)
 ./run.sh visual
-
-# Run sequential version
 ./run.sh sequential
-
-# Run CUDA version
 ./run.sh cuda
-
-# Run all benchmarks
 ./run.sh benchmark
-
-# Clean build artifacts
+./benchmark_block_sizes.sh
 ./run.sh clean
 ```
 
-## Game Rules
+## Rules (B3/S23)
 
-The simulation follows four simple rules that create complex emergent behavior:
-
-1. **Underpopulation**: Any live cell with fewer than two live neighbors dies
-2. **Survival**: Any live cell with two or three live neighbors lives on to the next generation
-3. **Overpopulation**: Any live cell with more than three live neighbors dies
-4. **Reproduction**: Any dead cell with exactly three live neighbors becomes alive
-
-These simple rules lead to fascinating patterns including oscillators, spaceships, and even Turing-complete constructions.
+* A dead cell with **3** live neighbors becomes alive.
+* A live cell survives with **2 or 3** live neighbors.
+* Otherwise it dies (under/overpopulation).
 
 ## Visual Version (Pygame)
 
-Interactive visualization with drawing capabilities.
-
 ### Requirements
 
-- Python 3.10+
-- Pygame (`pip install pygame`)
+* Python 3.10+
+* `pip install pygame`
 
-### Usage
+### Run
 
 ```bash
-# Default (120x80 grid, 10px cells)
-./run.sh visual
-
-# Custom: width height cell_size
-./run.sh visual 200 150 5
+./run.sh visual                 # default: 120x80, 10px cells
+./run.sh visual 200 150 5       # width height cell_size
 ```
 
 ### Controls
 
-| Key | Action |
-|-----|--------|
-| **SPACE** | Pause/Resume simulation |
-| **R** | Reset with random grid |
-| **C** | Clear grid |
-| **G** | Add glider at mouse position |
-| **U** | Add glider gun at mouse position |
-| **LEFT CLICK** | Draw cells |
-| **RIGHT CLICK** | Erase cells |
-| **UP/DOWN** | Increase/Decrease speed |
-| **+/-** | Zoom in/out |
-| **ESC** | Quit |
+| Key         | Action                     |
+| ----------- | -------------------------- |
+| **SPACE**   | Pause/Resume               |
+| **R**       | Random reset               |
+| **C**       | Clear                      |
+| **G**       | Glider at mouse            |
+| **U**       | Gosper glider gun at mouse |
+| **LMB**     | Draw                       |
+| **RMB**     | Erase                      |
+| **UP/DOWN** | Speed +/-                  |
+| **+/-**     | Zoom in/out                |
+| **ESC**     | Quit                       |
 
-## Python Sequential Implementation
+## Python Sequential (NumPy / SciPy)
+
+Vectorized implementation; optionally faster with SciPy convolution.
 
 ### Requirements
 
-- Python 3.10+
-- NumPy
+* Python 3.10+
+* `pip install numpy`
+* Recommended: `pip install scipy` (≈2–3× faster)
 
-### Usage
+### Run
 
 ```bash
-# Default (64x64 grid, 100 generations)
-./run.sh sequential
-
-# Custom: width height generations visualize(0/1)
-./run.sh sequential 128 128 500 0
-
-# Benchmark mode
+./run.sh sequential                 # default: 64x64, 100 gens
+./run.sh sequential 128 128 500     # width height generations
 ./run.sh sequential --benchmark
 ```
 
-### Features
+### Notes
 
-- Pure Python implementation (educational)
-- NumPy vectorized implementation (faster, default)
-- Toroidal grid wrapping
-- Console visualization for small grids
-- Built-in benchmarking
+* Fully vectorized (no Python loops over cells)
+* Toroidal boundaries (wrap-around)
+* Optional `scipy.ndimage.convolve` acceleration
+* Benchmark mode: multiple runs + CSV export
 
-## CUDA Parallel Implementation
+## CUDA Implementation
+
+High-performance GPU kernel tuned for stencil-like workloads.
 
 ### Requirements
 
-- NVIDIA GPU with CUDA support
-- CUDA Toolkit (nvcc)
+* NVIDIA GPU (Compute Capability 3.0+)
+* CUDA Toolkit 11+
+* Linux recommended (works on Windows with CUDA)
 
-### Usage
+### Run
 
 ```bash
-# Compile and run with defaults
-./run.sh cuda
-
-# Custom: width height generations visualize(0/1) seed
-./run.sh cuda 1024 1024 1000 0 42
-
-# Benchmark mode
+./run.sh cuda                         # default: 1024x1024, 100 gens
+./run.sh cuda 2048 2048 1000 0 42     # width height gens visualize(0/1) seed
 ./run.sh cuda --benchmark
+./benchmark_block_sizes.sh
 ```
 
-### Features
+### Key Optimizations
 
-- Basic kernel using global memory
-- Optimized kernel using shared memory with halo cells
-- Double buffering to avoid read/write conflicts
-- cuRAND for GPU-side random initialization
-- CUDA events for accurate timing
+* Shared-memory tiling + halo cells
+* Shared-memory padding to avoid bank conflicts
+* Coalesced global memory access
+* Read-only cache (`__ldg`) for boundary reads
+* Double buffering (ping-pong) between generations
 
-## Benchmarking
+### Block Size (summary)
 
-Both computational implementations include benchmark modes testing grid sizes: 32, 64, 128, 256, 512, 1024, 2048, and 4096.
+`16×16` is the best overall configuration in the included sweep (best throughput/occupancy balance).
+
+## Benchmarks
+
+Both CPU and CUDA benchmark grid sizes: **32 → 4096**.
 
 ```bash
-# Run all benchmarks
 ./run.sh benchmark
 ```
 
-Results are saved to:
-- `benchmarks/benchmark_sequential.csv`
-- `benchmarks/benchmark_cuda.csv`
+Outputs:
 
-## Performance Results
-
-> 📊 **For comprehensive performance analysis, optimization details, and methodology, see [ANALYSIS.md](ANALYSIS.md)**
-
-The CUDA implementation demonstrates significant performance gains over the sequential Python version, with speedup increasing for larger grid sizes. All benchmarks use optimized implementations:
-- **Python**: `scipy.ndimage.convolve` (2-3× faster than manual loops)
-- **CUDA**: `__ldg` intrinsic + shared memory padding (5-15% improvement)
-
-### Python Sequential (NumPy + scipy)
-
-| Grid Size | Total Time | Time/Gen | Throughput |
-|-----------|------------|----------|------------|
-| 32x32 | 8.46 ms | 0.085 ms | 12 M cells/s |
-| 64x64 | 7.95 ms | 0.080 ms | 52 M cells/s |
-| 128x128 | 8.83 ms | 0.088 ms | 186 M cells/s |
-| 256x256 | 10.52 ms | 0.105 ms | 623 M cells/s |
-| 512x512 | 24.71 ms | 0.247 ms | 1,061 M cells/s |
-| 1024x1024 | 71.07 ms | 0.711 ms | 1,475 M cells/s |
-| 2048x2048 | 278.38 ms | 2.784 ms | 1,507 M cells/s |
-| 4096x4096 | 3,920.58 ms | 39.206 ms | 428 M cells/s |
-
-### CUDA Parallel (Optimized Shared Memory)
-
-**Optimizations Applied**:
-- `__ldg()` read-only cache intrinsic for boundary cells
-- Shared memory padding (`tile[TILE_SIZE][TILE_SIZE+1]`) to eliminate bank conflicts
-- Kernel launch error checking with `CUDA_CHECK` macro
-
-| Grid Size | Total Time | Time/Gen | Throughput |
-|-----------|------------|----------|------------|
-| 32x32 | 0.21 ms | 0.002 ms | 480 M cells/s |
-| 64x64 | 0.23 ms | 0.002 ms | 1,793 M cells/s |
-| 128x128 | 0.24 ms | 0.002 ms | 6,750 M cells/s |
-| 256x256 | 0.38 ms | 0.004 ms | 17,418 M cells/s |
-| 512x512 | 0.89 ms | 0.009 ms | 29,305 M cells/s |
-| 1024x1024 | 3.01 ms | 0.030 ms | 34,873 M cells/s |
-| 2048x2048 | 13.04 ms | 0.130 ms | 32,159 M cells/s |
-| 4096x4096 | 44.77 ms | 0.448 ms | 37,478 M cells/s |
+* `benchmarks/benchmark_sequential.csv`
+* `benchmarks/benchmark_cuda.csv`
 
 ### Speedup (CUDA vs Python)
 
-| Grid Size | Python | CUDA | Speedup |
-|-----------|--------|------|---------|
-| 32x32 | 8.46 ms | 0.21 ms | **40x** |
-| 64x64 | 7.95 ms | 0.23 ms | **35x** |
-| 128x128 | 8.83 ms | 0.24 ms | **37x** |
-| 256x256 | 10.52 ms | 0.38 ms | **28x** |
-| 512x512 | 24.71 ms | 0.89 ms | **28x** |
-| 1024x1024 | 71.07 ms | 3.01 ms | **24x** |
-| 2048x2048 | 278.38 ms | 13.04 ms | **21x** |
-| 4096x4096 | 3,920.58 ms | 44.77 ms | **88x** |
-
-> Peak throughput: **37.5 billion cells/second** (CUDA, 4096x4096)
-> 
-> The CUDA implementation shows consistent performance advantages, with speedup ranging from 21x to 88x depending on grid size. The largest grids benefit most from GPU parallelization.
-> 
-> **Memory Bound Workload**: Performance is limited by memory bandwidth (~75 GB/s achieved vs ~760 GB/s peak), not compute. This is expected for cellular automata with low arithmetic intensity (0.8 ops/byte).
-> 
-> 📖 **Deep Dive**: See [ANALYSIS.md](ANALYSIS.md) for:
-> - Parallel efficiency analysis (why 4.3% efficiency is normal)
-> - Block size optimization (why 16×16 is optimal)
-> - Strong/weak scaling measurements
-> - Roofline model interpretation
-> - Optimization technique breakdowns
-
-## Key Features
-
-### All Implementations
-- Toroidal grid topology (edges wrap around)
-- Reproducible random initialization with seed support
-- Comprehensive benchmarking capabilities
-- CSV export of benchmark results
-
-### Sequential Implementation
-- Pure Python and NumPy vectorized implementations
-- **`scipy.ndimage.convolve`** optimization (2-3× faster than manual loops)
-- **Garbage collection management** for accurate benchmarking
-- Educational code structure for learning
-- Efficient for small to medium grids
-- No special hardware requirements
-
-### CUDA Implementation
-- Optimized shared memory kernel with halo cells
-- **`__ldg` intrinsic** for cache-friendly boundary reads
-- **Shared memory padding** to eliminate bank conflicts
-- Double buffering to eliminate read/write conflicts
-- cuRAND for GPU-side random initialization
-- CUDA events for accurate timing
-- **Kernel launch error checking** for robustness
-- Scales efficiently to very large grids (4096x4096+)
-
-### Visual Implementation
-- Real-time interactive simulation
-- Mouse-based cell drawing and erasing
-- Adjustable simulation speed (1-60 FPS)
-- Pre-built patterns (glider, Gosper glider gun)
-- Generation counter and live cell statistics
+| Grid      | Speedup   |
+| --------- | --------- |
+| 32×32     | 18.2×     |
+| 64×64     | 24.3×     |
+| 128×128   | 26.0×     |
+| 256×256   | 22.2×     |
+| 512×512   | 23.4×     |
+| 1024×1024 | 22.8×     |
+| 2048×2048 | 25.6×     |
+| 4096×4096 | **83.0×** |
 
 ## Documentation
 
-- **[ANALYSIS.md](ANALYSIS.md)** - Comprehensive performance analysis including:
-  - Speedup analysis and parallel efficiency calculations
-  - Memory bandwidth utilization breakdown
-  - Block size optimization study (why 16×16 is optimal)
-  - Strong and weak scaling measurements
-  - Optimization techniques with performance impact
-  - Roofline model interpretation
-  - Cost-benefit analysis and recommendations
-
-- **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)** - Detailed technical documentation including:
-  - Algorithm explanations and pseudocode
-  - CUDA kernel architecture and optimization strategies
-  - Shared memory layout with halo cell handling
-  - Memory management and double buffering
-  - Performance bottleneck discussion
-
-## System Requirements
-
-### Sequential Python Implementation
-- Python 3.10 or higher
-- NumPy library (`pip install numpy`)
-- **Recommended**: SciPy library for 2-3× faster performance (`pip install scipy`)
-- Works on any system (Windows, Linux, macOS)
-
-### CUDA Parallel Implementation
-- NVIDIA GPU with CUDA support (Compute Capability 3.0+)
-- CUDA Toolkit 11.0 or higher (includes nvcc compiler)
-- Linux recommended (also works on Windows with CUDA installed)
-
-### Visual Implementation
-- Python 3.10 or higher
-- Pygame library (`pip install pygame`)
-- Works on any system with graphics support
+See **`docs/Report_Game_of_Life.pdf`** for the full technical report (CUDA kernel design, block-size study, performance analysis).
 
 ## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/Cappetti99/Game-of-Life.git
 cd Game-of-Life
 
-# Install Python dependencies (NumPy required, SciPy recommended for 2-3× speedup)
 pip install numpy scipy pygame
+chmod +x run.sh benchmark_block_sizes.sh
 
-# Make the runner script executable
-chmod +x run.sh
-
-# Test the installation
 ./run.sh help
 ```
 
-## Project Structure Details
-
-The project is organized for clarity and separation of concerns:
-
-- `src/python/` - Sequential CPU implementation using NumPy
-- `src/cuda/` - Parallel GPU implementation using CUDA C++
-- `src/visual/` - Interactive visualization using Pygame
-- `benchmarks/` - Performance measurement results (generated)
-- `docs/` - Detailed technical documentation
-- `build/` - Compiled CUDA binaries (generated)
-- `run.sh` - Unified interface for all implementations
-
 ## Contributing
 
-Contributions are welcome! Areas for improvement:
-- **Texture memory**: Full texture API implementation for even better caching
-- **Warp-level primitives**: Use `__ballot_sync` for neighbor counting
-- **Multi-GPU support**: Partition grids across GPUs for linear scaling
-- **CUDA streams**: Overlap compute and memory transfer
-- Support for different cellular automaton rules (Wireworld, Brian's Brain, etc.)
-- Web-based visualization using WebGL
-- Pattern recognition and analysis tools
+Ideas:
+
+* Bit-packing (32 cells/word)
+* Warp-level primitives (`__ballot_sync`)
+* Multi-GPU domain decomposition
+* Streams (overlap compute/transfer)
+* More rulesets + pattern I/O
+* Web visualization (WebGL)
 
 ## License
 
-This project is open source and available for educational purposes.
-
-## References
-
-- [Conway's Game of Life - Wikipedia](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life)
-- [CUDA Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/)
-- [CUDA Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
-- [LifeWiki - Pattern Database](https://conwaylife.com/wiki/)
-- Williams et al. (2009) - "Roofline: An Insightful Visual Performance Model"
-
----
-
-For detailed performance analysis and optimization methodology, see [ANALYSIS.md](ANALYSIS.md).
-
-For implementation details, see [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+Open source, educational use.
