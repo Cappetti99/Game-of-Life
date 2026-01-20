@@ -2,15 +2,15 @@
 
 Conway's Game of Life implemented in three variants: **sequential CPU**, **GPU (CUDA)**, and **interactive visualization**.
 
-> **Performance**: CUDA reaches up to **83×** vs Python, peaking at **38.96B cells/s** on **4096×4096** grids.
+> **Performance**: CUDA reaches up to **83×** vs sequential NumPy (no SciPy), peaking at **38.96 Gcells/s** on **4096×4096** grids.
 
 ## Overview
 
 This repo showcases the same algorithm implemented with different trade-offs:
 
-- **Sequential (Python/NumPy)** — optimized, vectorized baseline (optional SciPy acceleration)
-- **Parallel (CUDA)** — high-throughput GPU kernel with memory optimizations
-- **Visual (Pygame)** — interactive, real-time simulation + pattern drawing
+- **Sequential (Python/NumPy)** — optimized, vectorized baseline (optional SciPy acceleration).
+- **Parallel (CUDA)** — high-throughput GPU kernel with memory optimizations.
+- **Visual (Pygame)** — interactive, real-time simulation + pattern drawing.
 
 ## Project Structure
 
@@ -27,12 +27,12 @@ Game-of-Life/
 │   ├── benchmark_sequential.csv
 │   ├── benchmark_cuda.csv
 │   └── block_size_comparison.csv
-├── docs/
-│   └── Report_Game_of_Life.pdf
+├── doc/                        # Documentation and analysis
+│   └── Report_Game_of_Life_Cappetti.pdf
 ├── build/                      # Generated binaries
 ├── run.sh                      # Main runner
 ├── benchmark_block_sizes.sh    # Block-size sweep
-└── README.md
+└── README.md                   # This file
 ```
 
 ## Quick Start
@@ -47,10 +47,10 @@ Game-of-Life/
 ./run.sh clean
 ```
 
-## Rules (B3/S23)
+## Rules
 
-* A dead cell with **3** live neighbors becomes alive.
-* A live cell survives with **2 or 3** live neighbors.
+* A dead cell with **3** live neighbors becomes alive;
+* A live cell survives with **2 or 3** live neighbors;
 * Otherwise it dies (under/overpopulation).
 
 ## Visual Version (Pygame)
@@ -102,10 +102,10 @@ Vectorized implementation; optionally faster with SciPy convolution.
 
 ### Notes
 
-* Fully vectorized (no Python loops over cells)
-* Toroidal boundaries (wrap-around)
-* Optional `scipy.ndimage.convolve` acceleration
-* Benchmark mode: multiple runs + CSV export
+* Fully vectorized (no Python loops over cells);
+* Toroidal boundaries (wrap-around);
+* Optional `scipy.ndimage.convolve` acceleration;
+* Benchmark mode: multiple runs + CSV export.
 
 ## CUDA Implementation
 
@@ -113,9 +113,9 @@ High-performance GPU kernel tuned for stencil-like workloads.
 
 ### Requirements
 
-* NVIDIA GPU (Compute Capability 3.0+)
-* CUDA Toolkit 11+
-* Linux recommended (works on Windows with CUDA)
+* NVIDIA GPU (Compute Capability 3.0+);
+* CUDA Toolkit 11+ ;
+* Linux recommended (works on Windows with CUDA).
 
 ### Run
 
@@ -128,11 +128,11 @@ High-performance GPU kernel tuned for stencil-like workloads.
 
 ### Key Optimizations
 
-* Shared-memory tiling + halo cells
-* Shared-memory padding to avoid bank conflicts
-* Coalesced global memory access
-* Read-only cache (`__ldg`) for boundary reads
-* Double buffering (ping-pong) between generations
+* Shared-memory tiling + halo cells;
+* Shared-memory padding to avoid bank conflicts;
+* Coalesced global memory access;
+* Read-only cache (`__ldg`) for boundary reads;
+* Double buffering (ping-pong) between generations.
 
 ### Block Size (summary)
 
@@ -166,7 +166,15 @@ Outputs:
 
 ## Documentation
 
-See **`docs/Report_Game_of_Life.pdf`** for the full technical report (CUDA kernel design, block-size study, performance analysis).
+Detailed performance analysis, benchmark results, and implementation details are available in the technical report:
+
+**[doc/Report_Game_of_Life_Cappetti.pdf](doc/Report_Game_of_Life_Cappetti.pdf)**
+
+The report includes:
+- CUDA kernel design and optimizations
+- Block-size comparison study
+- Performance analysis and speedup measurements
+- Memory access patterns and throughput analysis
 
 ## Installation
 
@@ -184,12 +192,12 @@ chmod +x run.sh benchmark_block_sizes.sh
 
 Ideas:
 
-* Bit-packing (32 cells/word)
-* Warp-level primitives (`__ballot_sync`)
-* Multi-GPU domain decomposition
-* Streams (overlap compute/transfer)
-* More rulesets + pattern I/O
-* Web visualization (WebGL)
+* Bit-packing (32 cells/word);
+* Warp-level primitives (`__ballot_sync`);
+* Multi-GPU domain decomposition;
+* Streams (overlap compute/transfer);
+* More rulesets + pattern I/O;
+* Web visualization (WebGL).
 
 ## License
 
